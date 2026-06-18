@@ -42,6 +42,22 @@ async function loadExistingEnv() {
   }
 }
 
+async function fetchTelegramUserIds(token) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.description || "getUpdates не сработал");
+  const seen = new Map();
+  for (const u of json.result || []) {
+    const m = u.message || u.edited_message;
+    const f = m?.from;
+    if (f && !seen.has(String(f.id))) {
+      const name = [f.first_name, f.last_name, f.username ? `@${f.username}` : ""].filter(Boolean).join(" ");
+      seen.set(String(f.id), { id: String(f.id), name: name || "(без имени)" });
+    }
+  }
+  return [...seen.values()];
+}
+
 async function fetchModels(key) {
   const res = await fetch(`${OLLAMA_BASE}/models`, {
     headers: { Authorization: `Bearer ${key}` },
@@ -104,9 +120,40 @@ async function main() {
     out.TELEGRAM_WEBHOOK_SECRET_TOKEN =
       existing.TELEGRAM_WEBHOOK_SECRET_TOKEN || randomBytes(24).toString("hex");
     console.log(`  webhook secret: ${out.TELEGRAM_WEBHOOK_SECRET_TOKEN} (сгенерирован)`);
+
+    // Доверенные user ID — единственные, кому бот отвечает (защита приватных данных).
+    const ids = new Set(
+      (existing.TELEGRAM_ALLOWED_USER_IDS || "").split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
+    );
+    console.log("\n  Доверенные пользователи: бот отвечает ТОЛЬКО им (иначе данные доступны кому угодно).");
+    if (out.TELEGRAM_BOT_TOKEN && (await askYesNo("  Определить твой Telegram ID автоматически?", true))) {
+      await ask("  → Напиши боту любое сообщение в Telegram и нажми Enter");
+      try {
+        const found = await fetchTelegramUserIds(out.TELEGRAM_BOT_TOKEN);
+        if (found.length) {
+          found.forEach((u, i) => console.log(`   ${i + 1}. ${u.id}  ${u.name}`));
+          const pick = await ask("  Кого добавить? номера через запятую (Enter — всех)", "");
+          const chosen = pick
+            ? pick.split(/[,\s]+/).map((n) => found[parseInt(n, 10) - 1]).filter(Boolean)
+            : found;
+          chosen.forEach((u) => ids.add(u.id));
+        } else {
+          console.log("  getUpdates пуст (или вебхук уже настроен) — введи ID вручную.");
+        }
+      } catch (e) {
+        console.log(`  Не удалось получить updates: ${e.message} — введи ID вручную.`);
+      }
+    }
+    out.TELEGRAM_ALLOWED_USER_IDS = await ask(
+      "  Доверенные Telegram ID (через запятую)",
+      [...ids].join(","),
+    );
+    if (!out.TELEGRAM_ALLOWED_USER_IDS.trim()) {
+      console.log("  ⚠ allowlist пуст — бот не будет отвечать НИКОМУ (fail-closed). Добавь ID позже в .env.");
+    }
     out.TELEGRAM_DIGEST_CHAT_ID = await ask(
-      "  Chat ID для дайджеста (можно позже)",
-      existing.TELEGRAM_DIGEST_CHAT_ID || "",
+      "  Chat ID для дайджеста",
+      existing.TELEGRAM_DIGEST_CHAT_ID || [...ids][0] || "",
     );
   }
 
@@ -118,7 +165,8 @@ async function main() {
   const order = [
     "OLLAMA_API_KEY", "OLLAMA_MODEL", "OLLAMA_CONTEXT_WINDOW",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_USERNAME", "TELEGRAM_WEBHOOK_SECRET_TOKEN",
-    "TELEGRAM_DIGEST_CHAT_ID", "ASSISTANT_DATA_DIR", "ASSISTANT_HOST", "ASSISTANT_BEARER",
+    "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_DIGEST_CHAT_ID",
+    "ASSISTANT_DATA_DIR", "ASSISTANT_HOST", "ASSISTANT_BEARER",
   ];
   const keys = [...order.filter((k) => out[k] != null), ...Object.keys(out).filter((k) => !order.includes(k))];
   const body = keys.map((k) => `${k}=${out[k]}`).join("\n") + "\n";
