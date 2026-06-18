@@ -34,6 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/eve-assistant/main/install.sh
 - 🤝 **Субагенты** — специалисты со своей моделью и структурным выводом (пример: `planner`)
 - 🔌 **MCP-ready** — подключение внешних MCP/OpenAPI серверов (токены модель не видит)
 - 💬 **Telegram-гейтвей** — бот, вложения, HITL inline-кнопки
+- 🔒 **Allowlist по user ID** — бот отвечает только доверенным (fail-closed), приватные данные защищены
 - ⏰ **Cron** — ежедневный дайджест (system cron на VPS / Vercel Cron)
 - 💾 **Durable execution** — сессии переживают краши и рестарты
 - 🖥️ **Dev TUI** — интерактивный терминал для отладки tool-loop
@@ -122,6 +123,18 @@ scripts/
 install.sh                # установка одной командой
 DEPLOY.md                 # VPS / Vercel / webhook / cron
 ```
+
+## 🔒 Безопасность доступа
+
+Личный ассистент хранит приватные данные, поэтому Telegram-бот отвечает **только доверенным
+пользователям** из `TELEGRAM_ALLOWED_USER_IDS`. Логика — в [`agent/channels/telegram.ts`](agent/channels/telegram.ts):
+
+- **Fail-closed:** пустой allowlist = бот не отвечает никому.
+- Недоверенному в личке приходит его собственный Telegram ID (чтобы передать владельцу); апдект дропается до запуска агента.
+- `npm run setup` определяет твой ID автоматически (через `getUpdates`) и кладёт в allowlist.
+- Вебхук дополнительно защищён секрет-токеном (`X-Telegram-Bot-Api-Secret-Token`).
+
+Проверено: апдейт от недоверённого user ID не доходит до модели (0 вызовов), от доверенного — обрабатывается.
 
 ## 🚢 Деплой
 

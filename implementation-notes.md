@@ -67,3 +67,30 @@
   а не `status === "completed"`.
 - **Порт dev — 2000** (не 3000). Prod `eve start` — `PORT` или 3000.
 - `timeout`/`gtimeout` на macOS нет — для тестов не использовать.
+
+## 2026-06-18 (безопасность доступа + конфигурируемость)
+
+### Decisions
+- **Allowlist Telegram по user ID (fail-closed).** `agent/channels/telegram.ts` переопределяет
+  `onMessage`: пускает только `TELEGRAM_ALLOWED_USER_IDS`; пустой список = никто. Недоверенному
+  в личке шлётся его ID, апдейт дропается (`return null`) до запуска агента. Дефолтные
+  `defaultOnMessage`/`defaultTelegramAuth`/`shouldDispatch` НЕ экспортируются публично
+  (`eve/channels/telegram` — единственный экспорт), поэтому логика диспатча и `auth`-контекст
+  воспроизведены вручную по исходнику eve (authenticator `telegram-webhook`, principalId
+  `telegram:<uid>` / `telegram:<chat>:<uid>`).
+- **Модель конфигурируема через `OLLAMA_MODEL`/`OLLAMA_CONTEXT_WINDOW`** (env), дефолт
+  `deepseek-v4-pro`. `setup.mjs` тянет живой список с `/v1/models` (35 моделей) и пишет выбор в `.env`.
+- **Автоопределение Telegram ID** в setup через `getUpdates` (работает до setWebhook).
+- **Один скрипт установки** `install.sh` (Node 24+ via nvm, deps, setup, build, systemd user-service);
+  читает ввод из `/dev/tty` → работает через `curl | bash`.
+
+### Verified (runtime, dev + поддельные вебхуки)
+- bad secret → 401 (встроенная проверка eve);
+- user 999 (не в allowlist) → `executeModelCall: 0`, агент НЕ запущен, отправлен denial-note;
+- user 111 (в allowlist) → агент отработал, ответ сформирован.
+  (sendMessage падал с 401 только из-за dummy-токена в тесте.)
+
+### Gotchas
+- `attributes` в `SessionAuthContext` — тип `Record<string, string | readonly string[]>`,
+  не `unknown` (иначе typecheck падает).
+- `getUpdates` не работает, если уже стоит вебхук (Telegram запрещает) — определять ID до setWebhook.

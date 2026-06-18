@@ -51,6 +51,12 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 Свой `chat_id` для дайджеста: напиши боту, затем
 `curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getUpdates"` → поле `message.chat.id`.
 
+### Доступ (важно)
+Бот отвечает только ID из `TELEGRAM_ALLOWED_USER_IDS` (через запятую). Пусто = не отвечает
+никому (fail-closed). `npm run setup` определит твой ID автоматически. Менять список можно в
+`.env` без пересборки (перезапусти процесс). `getUpdates` работает только пока вебхук не
+зарегистрирован — определяй ID до `setWebhook`.
+
 ## Cron на VPS (утренний дайджест)
 `scripts/daily-digest.ts` берёт дайджест у агента (`eve/client`) и шлёт в Telegram. system cron:
 ```cron
