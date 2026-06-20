@@ -1,0 +1,17 @@
+// Пример MCP-подключения. Переименуй в <имя>.ts и заполни, чтобы активировать.
+// Имя файла = имя подключения; инструменты будут видны модели как connection__<имя>__<tool>.
+import { defineMcpClientConnection } from "eve/connections";
+
+export default defineMcpClientConnection({
+  // Streamable HTTP или SSE эндпоинт MCP-сервера.
+  url: "https://mcp.example.com/sse",
+  // Описание для модели: что умеет сервер.
+  description: "Пример MCP-сервера: <что он делает>.",
+  // Авторизация (если нужна). Ключ — из .env, в код не хардкодим.
+  auth: {
+    getToken: async () => ({ token: process.env.EXAMPLE_MCP_TOKEN ?? "" }),
+  },
+  // Опционально: ограничить набор инструментов и требовать подтверждение.
+  // tools: { allow: ["search", "get_item"] },
+  // approval: once(),  // из "eve/tools/approval"
+});
