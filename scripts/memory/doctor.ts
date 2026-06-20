@@ -92,6 +92,20 @@ if (failures.length) {
   );
 }
 
+// ── 1b. CORE-guard: ядро памяти должно оставаться маленьким (always-on пол плоский) ──
+// 20-core.ts усекает на лету, но раздутый CORE.md — сигнал, что ночной rollup не ужал ядро.
+const CORE_CAP = 1200;
+const corePath = resolve(VAULT, "CORE.md");
+if (existsSync(corePath)) {
+  const coreLen = readFileSync(corePath, "utf8").length;
+  if (coreLen > CORE_CAP) {
+    await telegram(
+      `CORE.md раздулся: ${coreLen}/${CORE_CAP} символов (${today}). ` +
+        `Ночной rollup должен ужимать ядро по .claude/rules/core-format.md.`,
+    );
+  }
+}
+
 // ── 2. Детект падения health score ──
 const history = readHealthHistory();
 if (history.length >= 2) {
