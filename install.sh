@@ -33,7 +33,15 @@ warn() { echo "${c_yellow}! $*${c_reset}"; }
 die()  { echo "${c_red}✗ $*${c_reset}" >&2; exit 1; }
 
 # Громкий обработчик ошибок: больше никаких молчаливых выходов из-за set -e.
-trap 'rc=$?; echo >&2; echo "${c_red}✗ Установка прервалась (код $rc). Упала команда: ${BASH_COMMAND}${c_reset}" >&2; echo "${c_yellow}  Скопируй вывод выше и пришли — разберёмся.${c_reset}" >&2' ERR
+# Вынесен в функцию, чтобы временно снимать/возвращать его вокруг чужого кода
+# (nvm внутри штатно делает `return <non-zero>` — без снятия trap это ложная тревога).
+on_err() {
+  local rc=$?
+  echo >&2
+  echo "${c_red}✗ Установка прервалась (код $rc). Упала команда: ${BASH_COMMAND}${c_reset}" >&2
+  echo "${c_yellow}  Скопируй вывод выше и пришли — разберёмся.${c_reset}" >&2
+}
+trap on_err ERR
 
 # ── Режим интерактивности (по образцу NousResearch/hermes-agent) ───────────
 # НЕ делаем `exec < /dev/tty`: при `curl | bash` bash читает САМ скрипт из stdin-пайпа,
@@ -172,15 +180,18 @@ if [ "$need_node" -eq 1 ]; then
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
   fi
-  # ВАЖНО: `nvm use` падает (exit 1), если в ~/.npmrc задан npm `prefix`/`globalconfig`
-  # (частый случай с ~/.npm-global). Под set -e это молча убивало бы установку.
-  # Поэтому `use` НЕ зовём: устанавливаем и берём node прямо из каталога версии.
+  # ВАЖНО: nvm внутри штатно делает `return <non-zero>` (особенно при npm `prefix`
+  # в ~/.npmrc — частый случай с ~/.npm-global). Чтобы это НЕ роняло установку и НЕ
+  # печатало ложную «ошибку», на время nvm снимаем ERR-trap и errexit. `nvm use` не
+  # зовём вовсе — node берём прямо из каталога версии.
+  trap - ERR
   set +e
   # shellcheck disable=SC1091
   . "$NVM_DIR/nvm.sh"
   nvm install "$NODE_MAJOR_MIN"
   NODE_BIN_DIR="$(nvm which "$NODE_MAJOR_MIN" 2>/dev/null | xargs -r dirname 2>/dev/null)"
   set -e
+  trap on_err ERR
   if [ -z "${NODE_BIN_DIR:-}" ]; then
     NODE_BIN_DIR="$(ls -d "$NVM_DIR"/versions/node/v"$NODE_MAJOR_MIN"*/bin 2>/dev/null | sort -V | tail -1)"
   fi
