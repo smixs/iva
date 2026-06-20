@@ -1,4 +1,6 @@
 import { telegramChannel } from "eve/channels/telegram";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 // Токен (TELEGRAM_BOT_TOKEN) и секрет вебхука (TELEGRAM_WEBHOOK_SECRET_TOKEN)
 // читаются из окружения автоматически.
@@ -34,6 +36,21 @@ function shouldDispatch(msg: any, bot?: string): boolean {
   );
 }
 
+// Для медиа text/attachments пусты (eve не парсит голос/видео в attachments),
+// поэтому обычный shouldDispatch их всегда отбрасывает (строка с проверкой длины).
+// Гейтим по чату: личка — всегда; группа/супергруппа — только реплай боту,
+// команда или @упоминание в подписи. Иначе в группе чужой голос ушёл бы в Deepgram.
+function shouldDispatchMedia(msg: any, bot?: string): boolean {
+  if (msg.from?.isBot === true || msg.chat.type === "channel") return false;
+  if (msg.chat.type === "private") return true;
+  const caption: string = msg.caption || "";
+  return (
+    msg.replyToMessage?.from?.isBot === true ||
+    isBotCommand(caption, bot) ||
+    (bot !== undefined && caption.toLowerCase().includes(`@${bot.toLowerCase()}`))
+  );
+}
+
 // Воспроизводит дефолтный auth-контекст eve для Telegram-актора.
 function buildAuth(msg: any) {
   const u = msg.from;
@@ -56,6 +73,67 @@ function buildAuth(msg: any) {
     principalType: u.isBot ? "service" : "user",
   };
 }
+
+// --- Сырой транскрипт: дозапись реплики в дневной файл vault ---
+//
+// САМОДОСТАТОЧНО: только node-builtins (fs/path/Intl). Тот же хелпер продублирован
+// в agent/hooks/transcript.ts — общий модуль НЕ выносим (cross-authored import
+// ломает `eve dev` 0.11.4). Формат d_brain: `## HH:MM [type]` + контент.
+// Дата/время — в часовом поясе пользователя (ASSISTANT_TIMEZONE, иначе локальный TZ).
+function appendDaily(type: string, content: string): void {
+  const tz = process.env.ASSISTANT_TIMEZONE || undefined;
+  const now = new Date();
+  const localDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+  const hhmm = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const dir = join(process.env.ASSISTANT_VAULT_DIR || "vault", "daily");
+  mkdirSync(dir, { recursive: true });
+  // Append-only: существующие записи никогда не переписываются.
+  appendFileSync(join(dir, `${localDate}.md`), `\n## ${hhmm} ${type}\n${content}\n`, "utf8");
+}
+
+// --- Deepgram: транскрипция голоса/видео (nova-3, language=multi) ---
+//
+// Инлайн (НЕ общий модуль — см. выше). Тело — сырые байты, ответ →
+// results.channels[0].alternatives[0].transcript.
+async function transcribe(audio: ArrayBuffer): Promise<string> {
+  const language = process.env.DEEPGRAM_LANGUAGE || "multi";
+  const url =
+    `https://api.deepgram.com/v1/listen?model=nova-3&language=${language}` +
+    `&punctuate=true&smart_format=true`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${process.env.DEEPGRAM_API_KEY ?? ""}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: audio,
+  });
+  if (!res.ok) throw new Error(`Deepgram HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
+  };
+  return json.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+}
+
+// Голос/видео eve НЕ парсит как attachments (только photo/document) — берём из raw.
+// Метка определяет и префикс контекста, и [type] в daily.
+const MEDIA_KINDS: ReadonlyArray<readonly [string, "voice" | "video"]> = [
+  ["voice", "voice"],
+  ["audio", "voice"],
+  ["video", "video"],
+  ["video_note", "video"],
+  ["animation", "video"],
+];
 
 export default telegramChannel({
   botUsername: process.env.TELEGRAM_BOT_USERNAME ?? "my_bot",
@@ -83,8 +161,88 @@ export default telegramChannel({
       return null; // дропаем апдейт
     }
 
-    // 2. Штатное гейтирование диспатча.
+    // 2. Голос/видео → Deepgram. Берём file_id из raw (eve их не парсит в attachments).
+    const raw = message.raw as Record<string, { file_id?: string } | undefined>;
+    let media: { fileId: string; label: "voice" | "video" } | null = null;
+    for (const [key, label] of MEDIA_KINDS) {
+      const obj = raw[key];
+      if (obj && typeof obj.file_id === "string") {
+        media = { fileId: obj.file_id, label };
+        break;
+      }
+    }
+
+    if (media) {
+      // Гейтим медиа как обычный диспатч (в группе — только обращённое к боту).
+      if (!shouldDispatchMedia(message, ctx.telegram.botUsername)) return null;
+      const tag = `[${media.label}]`;
+      const caption = (message.caption || "").trim();
+      await ctx.telegram.startTyping();
+      try {
+        // getFile → file_path. Файлы >20MB Bot API не отдаёт (getFile вернёт ошибку).
+        const fileRes = await ctx.telegram.request("getFile", { file_id: media.fileId });
+        const fileBody = fileRes.body as
+          | { ok?: boolean; description?: string; result?: { file_path?: string } }
+          | null;
+        const filePath = fileBody?.result?.file_path;
+
+        if (!filePath) {
+          const desc = String(fileBody?.description ?? "");
+          if (/too big/i.test(desc)) {
+            // Грациозный фолбэк: фиксируем факт + подпись, отвечаем юзеру, дропаем апдейт.
+            const note = `(файл >20MB — Telegram не отдаёт его ботам)${caption ? `\n\n${caption}` : ""}`;
+            appendDaily(tag, note);
+            try {
+              await ctx.telegram.sendMessage(
+                "Файл больше 20 МБ — Telegram не отдаёт такие ботам. " +
+                  "Подпись сохранил; перешли файл иначе (ссылкой/частями).",
+              );
+            } catch {
+              /* молча игнорируем сбой ответа */
+            }
+            return null;
+          }
+          throw new Error(`getFile failed: ${desc || "no file_path"}`);
+        }
+
+        // Скачиваем байты напрямую с file-эндпоинта Telegram.
+        const token = process.env.TELEGRAM_BOT_TOKEN ?? "";
+        const dl = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+        if (!dl.ok) throw new Error(`download HTTP ${dl.status}`);
+        const audio = await dl.arrayBuffer();
+
+        const transcript = (await transcribe(audio)).trim();
+        if (!transcript) {
+          try {
+            await ctx.telegram.sendMessage("Не удалось распознать запись — пусто.");
+          } catch {
+            /* молча игнорируем сбой ответа */
+          }
+          return null;
+        }
+
+        // Сырой транскрипт юзера → daily; расшифровка долетает до Евы через context[].
+        appendDaily(tag, transcript);
+        return { auth: buildAuth(message), context: [`${tag} ${transcript}`] };
+      } catch (err) {
+        try {
+          await ctx.telegram.sendMessage(
+            `Не смог обработать запись: ${String((err as Error).message ?? err).slice(0, 200)}`,
+          );
+        } catch {
+          /* молча игнорируем сбой ответа */
+        }
+        return null;
+      }
+    }
+
+    // 3. Штатное гейтирование диспатча (текст/фото/документы).
     if (!shouldDispatch(message, ctx.telegram.botUsername)) return null;
+
+    // Сырой транскрипт: текстовая реплика юзера → daily.
+    const userText = (message.text || "").trim();
+    if (userText) appendDaily("[text]", userText);
+
     await ctx.telegram.startTyping();
     return { auth: buildAuth(message) };
   },
