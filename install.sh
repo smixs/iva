@@ -6,8 +6,17 @@
 #
 # Ставит системные зависимости (git, gh, python3, ffmpeg, pandoc, poppler), uv, Node 24+ (nvm),
 # npm-зависимости, проводит интерактивную настройку (Ollama + модель + Telegram +
-# Deepgram + часовой пояс + vault), собирает агента и заводит systemd user-сервис
-# плюс таймеры памяти. Vault инициализируется как git-репо для бэкапа.
+# Deepgram + часовой пояс + vault), собирает агента и заводит systemd user-сервис плюс
+# таймеры памяти. Live-vault инициализируется как отдельный git-репо для бэкапа.
+#
+# Интерактивная настройка читает ввод из /dev/tty — работает и при `curl | bash`
+# (по SSH с реальным терминалом). Если терминала нет (Docker/CI), настройка пропускается,
+# и в конце печатается команда запустить её вручную (`npm run setup`).
+#
+# Флаги (через `curl ... | bash -s -- <флаги>`):
+#   --skip-setup        не запускать мастер настройки (запустишь сам: npm run setup)
+#   --non-interactive   не задавать никаких вопросов (берёт дефолты; настройку пропускает)
+#   -h, --help          показать эту справку
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/smixs/eve-assistant.git}"
@@ -15,14 +24,49 @@ BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/eve-assistant}"
 NODE_MAJOR_MIN=24
 
-c_blue=$'\033[34m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'; c_reset=$'\033[0m'
+c_blue=$'\033[34m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'; c_bold=$'\033[1m'; c_reset=$'\033[0m'
 step() { echo "${c_blue}▸ $*${c_reset}"; }
 ok()   { echo "${c_green}✓ $*${c_reset}"; }
 warn() { echo "${c_yellow}! $*${c_reset}"; }
 die()  { echo "${c_red}✗ $*${c_reset}" >&2; exit 1; }
 
-# Интерактивный ввод даже при запуске через `curl | bash`
-if [ ! -t 0 ] && [ -r /dev/tty ]; then exec < /dev/tty; fi
+# ── Режим интерактивности (по образцу NousResearch/hermes-agent) ───────────
+# НЕ делаем `exec < /dev/tty`: при `curl | bash` bash читает САМ скрипт из stdin-пайпа,
+# и переназначение FD0 сломало бы чтение остатка. Вместо этого ввод подаём точечно
+# каждому интерактивному потребителю из /dev/tty, а наличие терминала пробуем открытием.
+RUN_SETUP=true
+NON_INTERACTIVE=false
+if [ -t 0 ]; then IS_INTERACTIVE=true; else IS_INTERACTIVE=false; fi
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-setup)      RUN_SETUP=false ;;
+    --non-interactive) NON_INTERACTIVE=true; RUN_SETUP=false ;;
+    -h|--help)
+      sed -n '2,19p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) warn "неизвестный флаг: $1 (игнорирую)" ;;
+  esac
+  shift
+done
+
+# Терминал реально открывается? (в Docker-build узел /dev/tty есть, но open даёт ENXIO).
+have_tty() { (: < /dev/tty) 2>/dev/null; }
+
+# y/n-вопрос с дефолтом; источник ввода: stdin-tty → /dev/tty → дефолт.
+prompt_yes_no() {
+  local question="$1" default="${2:-no}" suffix answer=""
+  case "$default" in [yY]*|1|true) suffix="[Y/n]" ;; *) suffix="[y/N]" ;; esac
+  if   [ "$NON_INTERACTIVE" = true ]; then answer=""
+  elif [ "$IS_INTERACTIVE" = true ]; then read -r -p "$question $suffix " answer || answer=""
+  elif have_tty; then printf '%s %s ' "$question" "$suffix" > /dev/tty; IFS= read -r answer < /dev/tty || answer=""
+  else answer=""; fi
+  answer="$(printf '%s' "$answer" | tr -d '[:space:]')"
+  if [ -z "$answer" ]; then
+    case "$default" in [yY]*|1|true) return 0 ;; *) return 1 ;; esac
+  fi
+  case "$answer" in [yY]|[yY][eE][sS]) return 0 ;; *) return 1 ;; esac
+}
 
 echo
 echo "  ${c_green}Ева${c_reset} — личный ассистент на eve + Ollama Cloud (bare-VPS)"
@@ -32,9 +76,9 @@ echo "  ────────────────────────
 run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 
 # ─────────────────────────────────────────────────────────────────────────
-# 1. Системные зависимости (git, gh, python3, ffmpeg). Detect-then-install.
-#    curl/git нужны заранее; ffmpeg опционален (nova-3 обычно принимает
-#    видео-контейнеры напрямую — берёт аудиодорожку; ffmpeg = страховка).
+# 1. Системные зависимости. Detect-then-install.
+#    ffmpeg опционален (nova-3 обычно принимает видео напрямую); pandoc/poppler —
+#    извлечение текста из присланных docx/pdf.
 # ─────────────────────────────────────────────────────────────────────────
 command -v curl >/dev/null || die "нужен curl (установи: apt/brew install curl)"
 
@@ -49,7 +93,6 @@ command -v git    >/dev/null 2>&1 || need_pkgs+=("git")
 command -v gh     >/dev/null 2>&1 || need_pkgs+=("gh")
 command -v python3>/dev/null 2>&1 || need_pkgs+=("python3")
 command -v ffmpeg >/dev/null 2>&1 || need_pkgs+=("ffmpeg")
-# Извлечение текста из присланных файлов: pandoc (docx и пр.), pdftotext (pdf).
 command -v pandoc >/dev/null 2>&1 || need_pkgs+=("pandoc")
 if ! command -v pdftotext >/dev/null 2>&1; then
   # Имя пакета зависит от менеджера: brew → poppler, apt/dnf → poppler-utils.
@@ -162,9 +205,17 @@ ok "Зависимости установлены"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 6. Интерактивная настройка (Ollama + модель + Telegram + Deepgram + TZ + vault)
+#    Читает /dev/tty → работает и при `curl | bash`. Без терминала — откладываем.
 # ─────────────────────────────────────────────────────────────────────────
-step "Настройка…"
-node scripts/setup.mjs
+SETUP_DONE=false
+if [ "$RUN_SETUP" = false ]; then
+  warn "Настройка пропущена (флаг). Запусти потом: cd $PROJECT_DIR && npm run setup"
+elif have_tty; then
+  step "Настройка…"
+  node scripts/setup.mjs < /dev/tty && SETUP_DONE=true
+else
+  warn "Нет терминала (/dev/tty) — пропускаю мастер. Запусти потом: cd $PROJECT_DIR && npm run setup"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────
 # 7. Сборка
@@ -175,26 +226,31 @@ ok "Сборка готова → .output"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8. Live-vault: ОТДЕЛЬНЫЙ приватный git-репо (память + бэкап + Obsidian)
+#    Создаётся из vault-template/ (скелет в код-репо); личные данные в код-репо не идут.
 # ─────────────────────────────────────────────────────────────────────────
-# Живой vault создаётся из vault-template/ (скелет в код-репо) и git-init-ится
-# как самостоятельный репозиторий — личные данные в код-репо не попадают.
 VAULT_DIR_REL="$(grep -E '^ASSISTANT_VAULT_DIR=' .env 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"' || true)"
 VAULT_DIR_REL="${VAULT_DIR_REL:-vault}"
+case "$VAULT_DIR_REL" in
+  /*) VAULT_PATH="$VAULT_DIR_REL" ;;
+  *)  VAULT_PATH="$PROJECT_DIR/$VAULT_DIR_REL" ;;
+esac
 step "Готовлю live-vault из шаблона…"
 ASSISTANT_VAULT_DIR="$VAULT_DIR_REL" node scripts/init-vault.mjs || warn "init-vault не отработал — проверь vault вручную"
 
 # ─────────────────────────────────────────────────────────────────────────
-# 9. systemd: основной сервис + таймеры памяти (Linux)
+# 9. systemd: основной сервис + таймеры памяти (Linux). Нужен настроенный .env.
 # ─────────────────────────────────────────────────────────────────────────
-if command -v systemctl >/dev/null 2>&1; then
-  read -r -p "Завести автозапуск через systemd (сервис + таймеры памяти)? (y/N) " a
-  if echo "${a:-}" | grep -qi '^y'; then
-    NODE_BIN="$(command -v node)"
-    UNIT_DIR="$HOME/.config/systemd/user"
-    mkdir -p "$UNIT_DIR"
+if ! command -v systemctl >/dev/null 2>&1; then
+  : # не Linux/systemd — пропускаем тихо
+elif [ ! -f .env ]; then
+  warn "Нет .env — автозапуск не настраиваю. Сначала: npm run setup, потом перезапусти install.sh."
+elif prompt_yes_no "Завести автозапуск через systemd (сервис + таймеры памяти)?" yes; then
+  NODE_BIN="$(command -v node)"
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
 
-    # Основной сервис агента
-    cat > "$UNIT_DIR/eve-assistant.service" <<EOF
+  # Основной сервис агента
+  cat > "$UNIT_DIR/eve-assistant.service" <<EOF
 [Unit]
 Description=eve assistant (Ева)
 After=network-online.target
@@ -210,50 +266,57 @@ Restart=always
 WantedBy=default.target
 EOF
 
-    # Таймеры/сервисы памяти из deploy/ (создаются компонентом памяти).
-    # Подставляем пути проекта/Node, если в юнитах есть плейсхолдеры.
-    timers_installed=0
-    if compgen -G "$PROJECT_DIR/deploy/eve-memory-*.service" >/dev/null 2>&1; then
-      step "Устанавливаю таймеры памяти из deploy/…"
-      for f in "$PROJECT_DIR"/deploy/eve-memory-*.service "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
-        [ -e "$f" ] || continue
-        sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
-            -e "s|__NODE_BIN__|$NODE_BIN|g" \
-            "$f" > "$UNIT_DIR/$(basename "$f")"
-      done
-      timers_installed=1
-    else
-      warn "deploy/eve-memory-*.{service,timer} не найдены — таймеры памяти пропущены"
-    fi
-
-    systemctl --user daemon-reload
-    systemctl --user enable --now eve-assistant.service
-    if [ "$timers_installed" -eq 1 ]; then
-      for t in "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
-        [ -e "$t" ] || continue
-        systemctl --user enable --now "$(basename "$t")" || warn "не удалось включить $(basename "$t")"
-      done
-      ok "Таймеры памяти включены: systemctl --user list-timers"
-    fi
-    loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "не удалось включить linger (сервис не стартует до логина)"
-    ok "Сервис запущен: systemctl --user status eve-assistant"
+  # Таймеры/сервисы памяти из deploy/ с подстановкой плейсхолдеров путей.
+  timers_installed=0
+  if compgen -G "$PROJECT_DIR/deploy/eve-memory-*.service" >/dev/null 2>&1; then
+    step "Устанавливаю таймеры памяти из deploy/…"
+    for f in "$PROJECT_DIR"/deploy/eve-memory-*.service "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
+      [ -e "$f" ] || continue
+      sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
+          -e "s|__NODE_BIN__|$NODE_BIN|g" \
+          "$f" > "$UNIT_DIR/$(basename "$f")"
+    done
+    timers_installed=1
+  else
+    warn "deploy/eve-memory-*.{service,timer} не найдены — таймеры памяти пропущены"
   fi
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now eve-assistant.service
+  if [ "$timers_installed" -eq 1 ]; then
+    for t in "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
+      [ -e "$t" ] || continue
+      systemctl --user enable --now "$(basename "$t")" || warn "не удалось включить $(basename "$t")"
+    done
+    ok "Таймеры памяти включены: systemctl --user list-timers"
+  fi
+  loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "не удалось включить linger (сервис не стартует до логина)"
+  ok "Сервис запущен: systemctl --user status eve-assistant"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────
 # 10. Финал
 # ─────────────────────────────────────────────────────────────────────────
 echo
-ok "Готово."
+echo "${c_green}${c_bold}┌──────────────────────────────────────────┐${c_reset}"
+echo "${c_green}${c_bold}│            ✓ Установка завершена          │${c_reset}"
+echo "${c_green}${c_bold}└──────────────────────────────────────────┘${c_reset}"
 echo
-echo "  Запуск вручную:   cd $PROJECT_DIR && npm start"
-echo "  Локальный диалог: npm run dev   (TUI)"
-echo "  Проверка:         npm run smoke"
+if [ "$SETUP_DONE" != true ]; then
+  echo "  ${c_yellow}${c_bold}Сначала настрой ключи:${c_reset}  cd $PROJECT_DIR && npm run setup"
+  echo "  Затем пересобери и запусти: npm run build && (systemctl --user restart eve-assistant)"
+  echo
+fi
+echo "  ${c_bold}Команды:${c_reset}"
+echo "    npm start         запуск агента (порт 3000)"
+echo "    npm run dev       локальный TUI-диалог (порт 2000)"
+echo "    npm run setup     мастер настройки (ключи/модель/TZ/vault)"
+echo "    npm run smoke     проверка tool-loop"
 echo
-echo "  ${c_yellow}Vault-бэкап в git:${c_reset} один раз авторизуйся и привяжи приватный remote:"
+echo "  ${c_yellow}${c_bold}Vault-бэкап в git${c_reset} (один раз — приватный remote для памяти):"
 echo "    gh auth login"
 echo "    gh repo create <user>/eva-vault --private --source=\"$VAULT_PATH\" --remote=origin --push"
-echo "    # или вручную: git -C \"$VAULT_PATH\" remote add origin git@github.com:<user>/eva-vault.git"
 echo
-echo "  Telegram webhook (после публичного HTTPS-домена) и таймеры памяти — см. DEPLOY.md"
+echo "  ${c_yellow}${c_bold}Telegram webhook${c_reset}: нужен публичный HTTPS на порт 3000 (reverse-proxy + TLS),"
+echo "  затем setWebhook с секретом. Подробности и таймеры памяти — в DEPLOY.md."
 echo
