@@ -1,0 +1,26 @@
+# systemd USER unit — консолидация памяти Евы за день.
+#
+# Установка (один раз, под пользователем, НЕ root):
+#   cp deploy/eve-memory-*.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now eve-memory-daily.timer eve-memory-weekly.timer \
+#       eve-memory-monthly.timer eve-memory-yearly.timer eve-memory-doctor.timer
+#   loginctl enable-linger "$USER"   # чтобы таймеры шли без активного логина
+#
+# Проверка:  systemctl --user list-timers
+# Запуск вручную:  systemctl --user start eve-memory-daily.service
+#
+# Плейсхолдеры __PROJECT_DIR__/__NODE_BIN__ подставляет install.sh при копировании
+# юнита в ~/.config/systemd/user/. Ставишь вручную — замени их на свои пути.
+# OnCalendar считается в локальном часовом поясе сервера — выстави его в ASSISTANT_TIMEZONE
+# (timedatectl set-timezone <TZ>); EnvironmentFile прокидывает TZ в сам процесс.
+[Unit]
+Description=Eve memory rollup (daily)
+After=network-online.target eve-assistant.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=__PROJECT_DIR__/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__NODE_BIN__ --env-file=.env scripts/memory/rollup.ts daily

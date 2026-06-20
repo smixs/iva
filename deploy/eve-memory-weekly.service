@@ -1,0 +1,10 @@
+[Unit]
+Description=Eve memory rollup (weekly)
+After=network-online.target eve-assistant.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=__PROJECT_DIR__/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__NODE_BIN__ --env-file=.env scripts/memory/rollup.ts weekly
