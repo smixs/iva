@@ -18,6 +18,9 @@ const DATA_DIR = process.env.ASSISTANT_DATA_DIR ?? "data";
 const ROUTE = `${HOST}/eve/v1/telegram`;
 const API = `https://api.telegram.org/bot${TOKEN}`;
 const OFFSET_FILE = join(DATA_DIR, "telegram-offset.json");
+// Пауза между апдейтами ОДНОГО чата: даём eve запарковать ход и зарегистрировать
+// continuation-хук, иначе бёрст стартует второй ран на тот же токен → HookConflictError.
+const SETTLE_MS = Number(process.env.TELEGRAM_POLL_SETTLE_MS ?? 1500);
 
 if (!TOKEN) {
   console.error("telegram-poll: нет TELEGRAM_BOT_TOKEN в .env — нечем поллить.");
@@ -54,6 +57,15 @@ async function fastForwardOffset() {
   }
 }
 
+// Ключ сериализации = continuation-хук eve (telegram:<chatId>:<threadId>:):
+// один чат (+ топик форума) — одна сессия, доставляем в неё по одному с паузой.
+function chatKey(update) {
+  const msg = update.message ?? update.callback_query?.message;
+  const chatId = msg?.chat?.id;
+  if (chatId === undefined) return null;
+  const threadId = msg?.message_thread_id;
+  return `${chatId}:${threadId ?? ""}`;
+}
 async function saveOffset(offset) {
   try {
     await mkdir(DATA_DIR, { recursive: true });
@@ -110,6 +122,9 @@ async function main() {
     log("стартовый offset:", offset);
   }
 
+  // Время последней доставки по ключу чата — для паузы SETTLE_MS между апдейтами чата.
+  const lastDeliverAt = new Map();
+
   for (;;) {
     let data;
     try {
@@ -133,7 +148,18 @@ async function main() {
       continue;
     }
     for (const update of data.result || []) {
+      const key = chatKey(update);
+      // Не доставлять следующий апдейт того же чата, пока eve не успел запарковать
+      // предыдущий ход (пауза от момента прошлой доставки в этот чат).
+      if (key !== null && SETTLE_MS > 0) {
+        const prev = lastDeliverAt.get(key);
+        if (prev !== undefined) {
+          const wait = SETTLE_MS - (Date.now() - prev);
+          if (wait > 0) await sleep(wait);
+        }
+      }
       await deliver(update); // ждём успешной доставки — порядок и без потерь
+      if (key !== null) lastDeliverAt.set(key, Date.now());
       offset = update.update_id + 1;
       await saveOffset(offset);
     }
