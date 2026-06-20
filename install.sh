@@ -345,9 +345,9 @@ elif prompt_yes_no "Завести автозапуск через systemd (се
   mkdir -p "$UNIT_DIR"
 
   # Основной сервис агента
-  cat > "$UNIT_DIR/eve-assistant.service" <<EOF
+  cat > "$UNIT_DIR/iva.service" <<EOF
 [Unit]
-Description=Iva (eve assistant)
+Description=Iva
 After=network-online.target
 
 [Service]
@@ -365,9 +365,9 @@ EOF
 
   # Таймеры/сервисы памяти из deploy/ с подстановкой плейсхолдеров путей.
   timers_installed=0
-  if compgen -G "$PROJECT_DIR/deploy/eve-memory-*.service" >/dev/null 2>&1; then
+  if compgen -G "$PROJECT_DIR/deploy/iva-memory-*.service" >/dev/null 2>&1; then
     step "Устанавливаю таймеры памяти из deploy/…"
-    for f in "$PROJECT_DIR"/deploy/eve-memory-*.service "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
+    for f in "$PROJECT_DIR"/deploy/iva-memory-*.service "$PROJECT_DIR"/deploy/iva-memory-*.timer; do
       [ -e "$f" ] || continue
       sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
           -e "s|__NODE_BIN__|$NODE_BIN|g" \
@@ -375,33 +375,33 @@ EOF
     done
     timers_installed=1
   else
-    warn "deploy/eve-memory-*.{service,timer} не найдены — таймеры памяти пропущены"
+    warn "deploy/iva-memory-*.{service,timer} не найдены — таймеры памяти пропущены"
   fi
 
   # Telegram polling-мост (бот отвечает БЕЗ webhook/прокси).
   poll_installed=0
-  if [ -f "$PROJECT_DIR/deploy/eve-telegram-poll.service" ]; then
+  if [ -f "$PROJECT_DIR/deploy/iva-telegram-poll.service" ]; then
     sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" -e "s|__NODE_BIN__|$NODE_BIN|g" \
-        "$PROJECT_DIR/deploy/eve-telegram-poll.service" > "$UNIT_DIR/eve-telegram-poll.service"
+        "$PROJECT_DIR/deploy/iva-telegram-poll.service" > "$UNIT_DIR/iva-telegram-poll.service"
     poll_installed=1
   fi
 
   systemctl --user daemon-reload
-  systemctl --user enable --now eve-assistant.service
+  systemctl --user enable --now iva.service
   if [ "$poll_installed" -eq 1 ]; then
-    systemctl --user enable --now eve-telegram-poll.service \
+    systemctl --user enable --now iva-telegram-poll.service \
       && ok "Telegram polling включён — бот отвечает без webhook" \
-      || warn "не удалось запустить eve-telegram-poll (вручную: npm run poll)"
+      || warn "не удалось запустить iva-telegram-poll (вручную: npm run poll)"
   fi
   if [ "$timers_installed" -eq 1 ]; then
-    for t in "$PROJECT_DIR"/deploy/eve-memory-*.timer; do
+    for t in "$PROJECT_DIR"/deploy/iva-memory-*.timer; do
       [ -e "$t" ] || continue
       systemctl --user enable --now "$(basename "$t")" || warn "не удалось включить $(basename "$t")"
     done
     ok "Таймеры памяти включены: systemctl --user list-timers"
   fi
   loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "не удалось включить linger (сервис не стартует до логина)"
-  ok "Сервис запущен: systemctl --user status eve-assistant"
+  ok "Сервис запущен: systemctl --user status iva"
 
   # Мгновенное подтверждение в Telegram (прямой Bot API — не зависит от сервера).
   _bot="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | head -n1 | cut -d= -f2- | tr -d '"' || true)"
@@ -442,6 +442,6 @@ echo "    gh auth login"
 echo "    gh repo create <user>/eva-vault --private --source=\"$VAULT_PATH\" --remote=origin --push"
 echo
 echo "  ${c_green}${c_bold}✅ Бот отвечает через polling${c_reset} — просто напиши ему в Telegram, без доменов и прокси."
-echo "    Статус бота:  systemctl --user status eve-telegram-poll"
-echo "    Логи бота:    journalctl --user -u eve-telegram-poll -f"
+echo "    Статус бота:  systemctl --user status iva-telegram-poll"
+echo "    Логи бота:    journalctl --user -u iva-telegram-poll -f"
 echo

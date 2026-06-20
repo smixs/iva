@@ -1,5 +1,5 @@
 // Доктор памяти: механическое обслуживание vault (без LLM) + git commit&push.
-// Запускается systemd-таймером (deploy/eve-memory-doctor.{service,timer}) ночью.
+// Запускается systemd-таймером (deploy/iva-memory-doctor.{service,timer}) ночью.
 //
 //   node --env-file=.env scripts/memory/doctor.ts
 //

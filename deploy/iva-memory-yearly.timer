@@ -1,5 +1,5 @@
 [Unit]
-Description=Eve memory rollup (yearly) — Jan 1 ~04:25 local
+Description=Iva memory rollup (yearly) — Jan 1 ~04:25 local
 
 [Timer]
 OnCalendar=*-01-01 04:25:00

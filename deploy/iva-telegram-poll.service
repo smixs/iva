@@ -2,11 +2,11 @@
 #
 # Сам забирает апдейты у Telegram (getUpdates) и POST-ит их в локальный eve.
 # Плейсхолдеры __PROJECT_DIR__/__NODE_BIN__ подставляет install.sh.
-# Установка вручную: см. комментарии в deploy/eve-memory-daily.service.
+# Установка вручную: см. комментарии в deploy/iva-memory-daily.service.
 [Unit]
-Description=Eve Telegram polling bridge (getUpdates → local webhook)
-After=network-online.target eve-assistant.service
-Wants=eve-assistant.service
+Description=Iva Telegram polling bridge (getUpdates → local webhook)
+After=network-online.target iva.service
+Wants=iva.service
 
 [Service]
 WorkingDirectory=__PROJECT_DIR__

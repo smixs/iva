@@ -1,22 +1,22 @@
-# systemd USER unit — консолидация памяти Евы за день.
+# systemd USER unit — консолидация памяти Iva за день.
 #
 # Установка (один раз, под пользователем, НЕ root):
-#   cp deploy/eve-memory-*.{service,timer} ~/.config/systemd/user/
+#   cp deploy/iva-memory-*.{service,timer} ~/.config/systemd/user/
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now eve-memory-daily.timer eve-memory-weekly.timer \
-#       eve-memory-monthly.timer eve-memory-yearly.timer eve-memory-doctor.timer
+#   systemctl --user enable --now iva-memory-daily.timer iva-memory-weekly.timer \
+#       iva-memory-monthly.timer iva-memory-yearly.timer iva-memory-doctor.timer
 #   loginctl enable-linger "$USER"   # чтобы таймеры шли без активного логина
 #
 # Проверка:  systemctl --user list-timers
-# Запуск вручную:  systemctl --user start eve-memory-daily.service
+# Запуск вручную:  systemctl --user start iva-memory-daily.service
 #
 # Плейсхолдеры __PROJECT_DIR__/__NODE_BIN__ подставляет install.sh при копировании
 # юнита в ~/.config/systemd/user/. Ставишь вручную — замени их на свои пути.
 # OnCalendar считается в локальном часовом поясе сервера — выстави его в ASSISTANT_TIMEZONE
 # (timedatectl set-timezone <TZ>); EnvironmentFile прокидывает TZ в сам процесс.
 [Unit]
-Description=Eve memory rollup (daily)
-After=network-online.target eve-assistant.service
+Description=Iva memory rollup (daily)
+After=network-online.target iva.service
 
 [Service]
 Type=oneshot

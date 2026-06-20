@@ -1,10 +1,10 @@
 [Unit]
-Description=Eve memory rollup (yearly)
-After=network-online.target eve-assistant.service
+Description=Iva memory doctor (vault health + git push)
+After=network-online.target iva.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=__PROJECT_DIR__
 EnvironmentFile=__PROJECT_DIR__/.env
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=__NODE_BIN__ --env-file=.env scripts/memory/rollup.ts yearly
+ExecStart=__NODE_BIN__ --env-file=.env scripts/memory/doctor.ts

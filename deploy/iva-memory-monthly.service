@@ -1,6 +1,6 @@
 [Unit]
-Description=Eve memory rollup (monthly)
-After=network-online.target eve-assistant.service
+Description=Iva memory rollup (monthly)
+After=network-online.target iva.service
 
 [Service]
 Type=oneshot

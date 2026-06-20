@@ -133,7 +133,7 @@ async function reply(chatId, text) {
 
 function restartAgent() {
   return new Promise((resolve) => {
-    execFile("systemctl", ["--user", "restart", "eve-assistant.service"], (err) => resolve(!err));
+    execFile("systemctl", ["--user", "restart", "iva.service"], (err) => resolve(!err));
   });
 }
 

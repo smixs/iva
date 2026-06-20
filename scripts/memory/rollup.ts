@@ -1,5 +1,5 @@
 // Консолидация памяти (DAG): один параметризованный скрипт для всех периодов.
-// Запускается systemd-таймером (см. deploy/eve-memory-*.{service,timer}), драйвит Iva
+// Запускается systemd-таймером (см. deploy/iva-memory-*.{service,timer}), драйвит Iva
 // через eve/client (как scripts/daily-digest.ts), и для daily/weekly шлёт отчёт в Telegram.
 //
 //   node --env-file=.env scripts/memory/rollup.ts <daily|weekly|monthly|yearly>
