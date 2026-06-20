@@ -1,0 +1,23 @@
+{
+  "skill_name": "autograph",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Need to create a CRM card for a new client — ACME Corp (consumer electronics), primary contact John Doe, CEO. We had a discovery call, they want a brand campaign in Eastern Europe for $15K. Create the card in the vault.",
+      "expected_output": "Card written to work/crm/acme-corp.md with valid frontmatter (type: crm, status from schema enum, description not repeating title, 2-5 tags), a ## Related section with a hub link to work/_index and 2+ sibling links, followed by a touch to initialize recall metadata.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Check the vault health. If the score is below 90, show me what to fix. Repair any broken links you find. Show the tier distribution.",
+      "expected_output": "Runs graph.py health, analyses metrics, fixes broken links when present, runs engine.py stats for tier distribution, runs moc.py generate if MOCs are stale, and runs engine.py decay to refresh relevance scores.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Find everything in the vault related to Sample Inc — the client card, projects, linked contacts. Show backlinks, and report any orphans in the 'work' domain.",
+      "expected_output": "Navigates via the hub work/_index.md → wikilinks → work/crm/sample-inc.md. Uses graph.py backlinks for reverse lookups. Checks orphans in the 'work' domain via graph.py orphans. Re-links any orphan files when sensible targets exist.",
+      "files": []
+    }
+  ]
+}

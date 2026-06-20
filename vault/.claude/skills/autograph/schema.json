@@ -1,0 +1,165 @@
+{
+  "_comment": "Seed schema for Eva's PERSONAL-MEMORY vault. Hand-authored (no discover/swarm bootstrap). Layout: daily/ raw transcripts; summaries/daily, weekly/, monthly/, yearly/ summary cards (DAG); cards/* entity cards. enrich.py is NOT used — Eva (DeepSeek) makes all tag/link/classification judgments.",
+
+  "node_types": {
+    "daily-summary": {
+      "description": "One-day rollup card: topics of the day + MOC down to created cards and the raw daily transcript, up to the week",
+      "required": ["description", "tags"],
+      "status": ["active", "archived"]
+    },
+    "weekly-summary": {
+      "description": "Seven-day rollup card: week themes + MOC down to daily-summaries, up to the month",
+      "required": ["description", "tags"],
+      "status": ["active", "archived"]
+    },
+    "monthly-summary": {
+      "description": "Month rollup card: month arc + MOC down to weekly-summaries, up to the year",
+      "required": ["description", "tags"],
+      "status": ["active", "archived"]
+    },
+    "yearly-summary": {
+      "description": "Year rollup card: top of the DAG; MOC down to monthly-summaries",
+      "required": ["description", "tags"],
+      "status": ["active", "archived"]
+    },
+    "note": {
+      "description": "Knowledge note, captured thought, learning, or reference",
+      "required": ["description", "tags"],
+      "status": ["active", "draft", "archived"]
+    },
+    "contact": {
+      "description": "Person or organization the user interacts with",
+      "required": ["description", "tags", "status"],
+      "status": ["active", "inactive"]
+    },
+    "project": {
+      "description": "Ongoing project or initiative with deliverables",
+      "required": ["description", "tags", "status"],
+      "status": ["active", "done", "paused", "cancelled", "draft"]
+    },
+    "idea": {
+      "description": "Idea, proposal, or hypothesis worth keeping",
+      "required": ["description", "tags"],
+      "status": ["active", "explored", "archived", "draft"]
+    },
+    "decision": {
+      "description": "A decision made, with rationale; can later be superseded or reverted",
+      "required": ["description", "tags"],
+      "status": ["active", "superseded", "reverted"]
+    }
+  },
+
+  "type_aliases": {
+    "person": "contact",
+    "people": "contact",
+    "company": "contact",
+    "org": "contact",
+    "organization": "contact",
+    "thought": "note",
+    "reflection": "note",
+    "learning": "note",
+    "memo": "note",
+    "daily": "daily-summary",
+    "weekly": "weekly-summary",
+    "monthly": "monthly-summary",
+    "yearly": "yearly-summary",
+    "proposal": "idea",
+    "hypothesis": "idea"
+  },
+
+  "field_fixes": {
+    "status": {
+      "actve": "active",
+      "archved": "archived",
+      "inactve": "inactive",
+      "supersded": "superseded"
+    }
+  },
+
+  "region_fixes": {},
+
+  "domain_inference": {
+    "_comment": "folder prefix (startswith from vault root) -> domain. daily/weekly/monthly/yearly + summaries are personal-life timeline; cards/* split by kind.",
+    "daily/": "personal",
+    "weekly/": "personal",
+    "monthly/": "personal",
+    "yearly/": "personal",
+    "summaries/": "personal",
+    "cards/projects/": "work",
+    "cards/decisions/": "work",
+    "cards/contacts/": "personal",
+    "cards/ideas/": "knowledge",
+    "cards/notes/": "knowledge",
+    "cards/": "knowledge"
+  },
+
+  "path_type_hints": {
+    "_comment": "folder substring -> type name (used when a card has no explicit type field). Raw daily/ transcripts are NOT cards, so they get no type hint.",
+    "summaries/daily/": "daily-summary",
+    "weekly/": "weekly-summary",
+    "monthly/": "monthly-summary",
+    "yearly/": "yearly-summary",
+    "cards/notes/": "note",
+    "cards/contacts/": "contact",
+    "cards/projects/": "project",
+    "cards/ideas/": "idea",
+    "cards/decisions/": "decision"
+  },
+
+  "status_order": {
+    "_comment": "sort order for MOC generation (lower = higher priority)",
+    "active": 0,
+    "draft": 5,
+    "explored": 6,
+    "done": 7,
+    "paused": 8,
+    "superseded": 9,
+    "reverted": 10,
+    "cancelled": 11,
+    "inactive": 12,
+    "archived": 13
+  },
+
+  "status_defaults": {
+    "_comment": "default status for new cards by type (when status is missing)",
+    "default": "active",
+    "note": "active",
+    "idea": "active"
+  },
+
+  "richness_fields": {
+    "_comment": "frontmatter fields that indicate content richness (used by dedup scoring)",
+    "bonus_fields": ["telegram", "email", "company", "role", "source", "url", "date", "topics", "period"]
+  },
+
+  "entity_extraction": {
+    "_comment": "settings for daily.py mechanical entity extraction",
+    "noise_words": ["TODO", "FIX", "NEW", "UPDATED", "Eva", "Topics", "Summary", "MOC",
+                    "Daily", "Weekly", "Monthly", "Yearly", "Voice", "Video", "Photo", "Text"]
+  },
+
+  "decay": {
+    "rate": 0.015,
+    "floor": 0.1,
+    "tiers": {
+      "active": 7,
+      "warm": 21,
+      "cold": 60
+    },
+    "domain_rates": {
+      "_comment": "type-specific decay rates (override default rate). Summaries are durable memory and decay slow; the higher the rollup, the slower. Raw daily transcripts decay fast.",
+      "yearly-summary": 0.001,
+      "monthly-summary": 0.002,
+      "weekly-summary": 0.004,
+      "daily-summary": 0.008,
+      "decision": 0.004,
+      "contact": 0.005,
+      "project": 0.010,
+      "note": 0.012,
+      "idea": 0.012,
+      "daily": 0.030
+    }
+  },
+
+  "ignore_tags": ["imported", "transcript-raw"]
+}

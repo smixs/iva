@@ -1,0 +1,90 @@
+{
+  "_comment": "Example schema — generate yours with: discover.py <vault> → review → save as schema.json",
+
+  "node_types": {
+    "note": {
+      "description": "Knowledge note, article, thought",
+      "required": ["description", "tags"],
+      "status": ["active", "draft", "archived"]
+    },
+    "contact": {
+      "description": "Person",
+      "required": ["description", "tags", "status"],
+      "status": ["active", "inactive"]
+    },
+    "project": {
+      "description": "Project with deliverables",
+      "required": ["description", "tags", "status"],
+      "status": ["active", "done", "paused", "cancelled"]
+    }
+  },
+
+  "type_aliases": {},
+  "field_fixes": {},
+  "region_fixes": {},
+
+  "domain_inference": {
+    "projects/": "work",
+    "personal/": "personal",
+    "knowledge/": "knowledge"
+  },
+
+  "path_type_hints": {
+    "_comment": "folder substring → type name (used when card has no type field)",
+    "leads/": "lead",
+    "contacts/": "contact",
+    "people/": "contact"
+  },
+
+  "status_order": {
+    "_comment": "sort order for MOC generation (lower = higher priority)",
+    "active": 0,
+    "prospect": 1,
+    "negotiation": 2,
+    "won": 3,
+    "standby": 4,
+    "pending": 5,
+    "lost": 6,
+    "inactive": 7,
+    "done": 8,
+    "draft": 9,
+    "paused": 10,
+    "cancelled": 11
+  },
+
+  "status_defaults": {
+    "_comment": "default status for new cards by type (when status is missing)",
+    "default": "active"
+  },
+
+  "richness_fields": {
+    "_comment": "frontmatter fields that indicate content richness (used by dedup)",
+    "bonus_fields": ["telegram", "email", "company", "role", "source", "deal_status", "responsible"]
+  },
+
+  "entity_extraction": {
+    "_comment": "settings for daily.py entity extraction",
+    "noise_words": ["TODO", "FIX", "NEW", "UPDATED", "Phase", "Score", "Vault",
+                    "Health", "Pricing"]
+  },
+
+  "decay": {
+    "rate": 0.015,
+    "floor": 0.1,
+    "tiers": {
+      "active": 7,
+      "warm": 21,
+      "cold": 60
+    },
+    "domain_rates": {
+      "_comment": "type-specific decay rates (override default rate)",
+      "contact": 0.005,
+      "crm": 0.008,
+      "learning": 0.010,
+      "project": 0.012,
+      "daily": 0.020
+    }
+  },
+
+  "ignore_tags": []
+}

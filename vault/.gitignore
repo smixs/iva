@@ -1,0 +1,22 @@
+# Eva memory vault — git-backed (backup + Obsidian)
+# Keep content: daily/, weekly/, monthly/, yearly/, summaries/, cards/, schema.json, .claude/
+
+# --- autograph runtime caches & derived data (regenerable) ---
+.graph/
+**/.graph/
+.obsidian/workspace*.json
+
+# --- soft-deletes from dedup ---
+.trash/
+**/.trash/
+
+# --- rollup/doctor runtime session state ---
+.session/
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+
+# Note: schema.json is intentionally tracked (the schema IS the source of truth).
+# A local-only override may live in schema.local.json:
+schema.local.json
