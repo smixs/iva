@@ -94,3 +94,53 @@
 - `attributes` в `SessionAuthContext` — тип `Record<string, string | readonly string[]>`,
   не `unknown` (иначе typecheck падает).
 - `getUpdates` не работает, если уже стоит вебхук (Telegram запрещает) — определять ID до setWebhook.
+
+## 2026-06-20 (v2 — bare-VPS + память DAG + Deepgram)
+
+### Decisions
+- **Sandbox убран → host-native тулзы.** На bare VPS у Евы полный shell + файловый доступ через
+  override встроенных тулзов (`bash`/`read_file`/`write_file`/`glob`/`grep`) на Node `fs`/`child_process`.
+  Снимает зависимость от Docker/microsandbox. Периметр держит allowlist Telegram (fail-closed).
+- **Deepgram в TS через REST** (`POST /v1/listen?model=nova-3&language=multi`), без Python в рантайме
+  бота. Функция транскрипции **инлайнится** в `telegram.ts` (cross-authored import ломает `eve dev`),
+  при необходимости дублируется в rollup-скрипт. Голос/видео берутся из `message.raw` (eve парсит как
+  attachments только photo/document).
+- **Двусторонний транскрипт** vault: сторона юзера пишется в `onMessage` (`context:[transcript]` доносит
+  расшифровку до модели при пустом `message.text`), сторона Евы — `message.completed` хук
+  `agent/hooks/transcript.ts`.
+- **Память — DAG через systemd-таймеры + `eve/client`** (`scripts/memory/rollup.ts <period>`,
+  `doctor.ts`), т.к. eve-расписания на self-host не идут. Один параметризованный rollup-скрипт;
+  doctor делает autograph health/decay/moc/dedup + git commit&push vault.
+- **autograph вендорится в репо** (`vault/.claude/skills/autograph/`), запуск через `uv run`. Используем
+  только механические скрипты; `enrich.py` (OpenRouter) **обходим** — теги/связи/классификацию делает
+  сама Eva (только DeepSeek, без второго LLM-провайдера).
+- **Часовой пояс** — `ASSISTANT_TIMEZONE` (→ `TZ` в systemd) + динамическая инструкция `now`, вместо
+  хардкода «Almaty UTC+5».
+
+### Decisions (Component F — installer/setup/env/docs)
+- **install.sh расширен под bare-VPS.** Detect-then-install системных пакетов (`git`/`gh`/`python3`/`ffmpeg`)
+  через apt/dnf/brew; `sudo -v` один раз в начале, если пакеты нужны и не root. `gh` на apt ставится через
+  официальный источник cli.github.com (нет в базовых репах Debian/Ubuntu). uv — `curl … astral.sh/uv`.
+  Node 24 через nvm (как было). Затем `npm ci` → `eve build` → `git init` vault → systemd сервис + таймеры.
+- **ffmpeg ставится, но помечен опциональным** — nova-3 обычно принимает видео-контейнеры напрямую
+  (берёт аудиодорожку); ffmpeg как страховка под перекодировку.
+- **Таймеры памяти ставятся из `deploy/eve-memory-*.{service,timer}`** (создаёт компонент памяти). install.sh
+  копирует юниты в `~/.config/systemd/user/` с подстановкой плейсхолдеров `__PROJECT_DIR__`/`__NODE_BIN__`
+  (sed, безвредно если их нет), `enable --now` + `loginctl enable-linger`. Если deploy-юнитов ещё нет —
+  пропускает с warn (устойчиво к порядку сборки компонентов).
+- **Vault git init в install.sh**, без авто-`gh auth login`: создаётся локальный репо + `.gitignore`,
+  пользователю печатается напоминание `gh auth login` + `gh repo create --private`. Авторизацию руками
+  один раз — gh-токен в неинтерактивном `curl|bash` не выпросить.
+- **setup.mjs**: добавлены промпты `DEEPGRAM_API_KEY` (required, с маскировкой «…(оставить)» как у Ollama),
+  `DEEPGRAM_LANGUAGE` (multi), `ASSISTANT_TIMEZONE` (Asia/Almaty), `ASSISTANT_VAULT_DIR` (vault). Записаны в
+  ordered-writer в логическом порядке (после Telegram, перед ASSISTANT_DATA_DIR).
+- **package.json**: убран devDep `microsandbox` (+ из package-lock через `npm install --package-lock-only`;
+  оставшиеся 2 упоминания в lock — это optional peerDependency самого `eve`, не наш пакет). Добавлены скрипты
+  `memory`/`doctor` (`node --env-file=.env scripts/memory/*.ts`). `fast-glob` НЕ добавлен — в коде не
+  референсится (хост-glob делает свой обход на `fs`). `ai`-pin/overrides/resolutions не тронуты.
+
+### Gotchas / Open questions
+- **`npm run memory daily`** — задокументировано как `npm run memory -- daily` (безопасная передача аргумента
+  периода в rollup.ts через `--`).
+- **deploy/ и scripts/memory/ на момент работы компонента F не существуют** (их создают другие компоненты).
+  install.sh и package.json ссылаются на них «вперёд»; install.sh устойчив к отсутствию deploy-юнитов.

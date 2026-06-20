@@ -157,7 +157,34 @@ async function main() {
     );
   }
 
-  // 4. Прочее
+  // 4. Deepgram — транскрипция голоса/видео (обязательно для голосовых)
+  const dgDef = process.env.DEEPGRAM_API_KEY || existing.DEEPGRAM_API_KEY || "";
+  let dgKey = await ask(
+    "\n  Deepgram API key (https://console.deepgram.com)",
+    dgDef ? dgDef.slice(0, 6) + "…(оставить)" : "",
+  );
+  if (!dgKey || dgKey.endsWith("…(оставить)")) dgKey = dgDef;
+  if (!dgKey) {
+    console.error("  Deepgram-ключ обязателен (голос/видео не расшифровать без него). Прерываю.");
+    process.exit(1);
+  }
+  out.DEEPGRAM_API_KEY = dgKey;
+  out.DEEPGRAM_LANGUAGE = await ask(
+    "  Язык распознавания (multi = авто ru/uz/en)",
+    out.DEEPGRAM_LANGUAGE || "multi",
+  );
+
+  // 5. Часовой пояс и vault
+  out.ASSISTANT_TIMEZONE = await ask(
+    "\n  Часовой пояс (IANA, напр. Asia/Almaty)",
+    out.ASSISTANT_TIMEZONE || "Asia/Almaty",
+  );
+  out.ASSISTANT_VAULT_DIR = await ask(
+    "  Каталог vault (память + git-бэкап)",
+    out.ASSISTANT_VAULT_DIR || "vault",
+  );
+
+  // 6. Прочее
   out.ASSISTANT_DATA_DIR = out.ASSISTANT_DATA_DIR || "data";
   out.ASSISTANT_HOST = out.ASSISTANT_HOST || "http://127.0.0.1:3000";
 
@@ -166,6 +193,8 @@ async function main() {
     "OLLAMA_API_KEY", "OLLAMA_MODEL", "OLLAMA_CONTEXT_WINDOW",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_USERNAME", "TELEGRAM_WEBHOOK_SECRET_TOKEN",
     "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_DIGEST_CHAT_ID",
+    "DEEPGRAM_API_KEY", "DEEPGRAM_LANGUAGE",
+    "ASSISTANT_TIMEZONE", "ASSISTANT_VAULT_DIR",
     "ASSISTANT_DATA_DIR", "ASSISTANT_HOST", "ASSISTANT_BEARER",
   ];
   const keys = [...order.filter((k) => out[k] != null), ...Object.keys(out).filter((k) => !order.includes(k))];
@@ -175,6 +204,8 @@ async function main() {
   console.log(`\n  ✓ Записан ${ENV_PATH}`);
   console.log(`  ✓ Модель: ${out.OLLAMA_MODEL}`);
   console.log(out.TELEGRAM_BOT_TOKEN ? "  ✓ Telegram настроен" : "  • Telegram пропущен");
+  console.log(out.DEEPGRAM_API_KEY ? `  ✓ Deepgram (${out.DEEPGRAM_LANGUAGE})` : "  • Deepgram пропущен");
+  console.log(`  ✓ TZ: ${out.ASSISTANT_TIMEZONE} · vault: ${out.ASSISTANT_VAULT_DIR}`);
   rl.close();
 }
 

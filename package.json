@@ -13,6 +13,8 @@
     "start": "eve start",
     "smoke": "node scripts/smoke-test.mjs",
     "digest": "node scripts/daily-digest.ts",
+    "memory": "node --env-file=.env scripts/memory/rollup.ts",
+    "doctor": "node --env-file=.env scripts/memory/doctor.ts",
     "typecheck": "tsgo"
   },
   "dependencies": {
@@ -24,8 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "24.x",
-    "@typescript/native-preview": "7.0.0-dev.20260523.1",
-    "microsandbox": "^0.5.7"
+    "@typescript/native-preview": "7.0.0-dev.20260523.1"
   },
   "overrides": {
     "ai": "7.0.0-beta.178"

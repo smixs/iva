@@ -1,9 +1,46 @@
 # Деплой ассистента (Ева)
 
+## Установка одной командой (bare VPS)
+```bash
+curl -fsSL https://raw.githubusercontent.com/smixs/eve-assistant/main/install.sh | bash
+```
+`install.sh` сам ставит системные зависимости (`git`, `gh`, `python3`, `ffmpeg`), `uv`,
+Node 24+ (nvm), npm-зависимости, проводит интерактивную настройку (`setup.mjs`), собирает
+агента, инициализирует vault как git-репо и заводит systemd user-сервис + таймеры памяти.
+Если нужны системные пакеты — пароль `sudo` запрашивается один раз в начале. Ввод читается
+из `/dev/tty`, поэтому `curl | bash` работает интерактивно.
+
 ## Переменные окружения
-Скопируй `.env.example` → `.env` и заполни. Минимум: `OLLAMA_API_KEY`.
-Для Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`,
-`TELEGRAM_DIGEST_CHAT_ID`.
+Скопируй `.env.example` → `.env` и заполни (или запусти `npm run setup`). Минимум:
+`OLLAMA_API_KEY`, `DEEPGRAM_API_KEY`.
+- Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`,
+  `TELEGRAM_ALLOWED_USER_IDS`, `TELEGRAM_DIGEST_CHAT_ID`.
+- Deepgram: `DEEPGRAM_API_KEY`, `DEEPGRAM_LANGUAGE` (дефолт `multi` — авто ru/uz/en).
+- Память/время: `ASSISTANT_TIMEZONE` (IANA, дефолт `Asia/Almaty` — даты транскрипта, таймеры,
+  динамическая инструкция `now`), `ASSISTANT_VAULT_DIR` (дефолт `vault`).
+
+## Доступ к хосту (без sandbox)
+На self-host у Евы host-native тулзы (`bash`/`read_file`/`write_file`/`glob`/`grep`) — они
+выполняются прямо на VPS через Node `fs`/`child_process`, без microsandbox/Docker. Это полный
+shell + файловый доступ к серверу. Защита периметра — allowlist Telegram (`TELEGRAM_ALLOWED_USER_IDS`,
+fail-closed): писать Еве могут только доверенные ID. По желанию запускай сервис под отдельным
+non-root пользователем.
+
+## Голос и видео (Deepgram)
+Голосовые, видео-кружки, аудио и видео из Telegram автоматически транскрибируются (Deepgram
+nova-3, `language=multi`) перед попаданием к Еве и записываются в дневной транскрипт vault.
+Нужен `DEEPGRAM_API_KEY`. Файлы >20 MB Bot API не отдаёт — обрабатывается грациозным фолбэком.
+
+## Vault (память + git-бэкап)
+`ASSISTANT_VAULT_DIR` — отдельный приватный git-репо (память Евы + Obsidian). `install.sh`
+делает `git init` и кладёт `.gitignore`. Привязку к приватному remote и бэкап настраивает
+пользователь один раз при первом запуске:
+```bash
+gh auth login
+gh repo create <user>/eva-vault --private --source="$VAULT_DIR" --remote=origin --push
+```
+`scripts/memory/doctor.ts` коммитит и пушит память после обработки; если remote/credentials
+не настроены — шлёт в Telegram напоминание выполнить `gh auth login`.
 
 ## Локальная разработка
 ```bash
@@ -63,6 +100,26 @@ curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
 0 5 * * *  cd /srv/assistant && node --env-file=.env scripts/daily-digest.ts >> /var/log/assistant-cron.log 2>&1
 ```
 (05:00 UTC ≈ 10:00 Алматы. Агент должен быть запущен.)
+
+## Система памяти — systemd-таймеры (DAG-роллапы)
+> eve-расписания (`defineSchedule`) на self-host НЕ срабатывают — они становятся Vercel Cron
+> только на Vercel. Поэтому роллапы памяти крутятся через systemd user-таймеры, которые драйвят
+> Еву через `eve/client`.
+
+`install.sh` устанавливает юниты из `deploy/eve-memory-*.{service,timer}` в
+`~/.config/systemd/user/` и включает их (`systemctl --user enable --now`, `loginctl enable-linger`).
+`OnCalendar` берёт `TZ` из `EnvironmentFile=.env` (`ASSISTANT_TIMEZONE`). Таймеры:
+
+| Таймер | Когда | Что делает |
+|--------|-------|-----------|
+| `eve-memory-daily`   | ночью     | транскрипт дня → карточки + daily-summary, отчёт в Telegram |
+| `eve-memory-weekly`  | Вс ночью  | 7 daily-summary → weekly-summary + MOC, отчёт в Telegram |
+| `eve-memory-monthly` | 1-е число | weekly → monthly-summary |
+| `eve-memory-yearly`  | 1 января  | monthly → yearly-summary |
+| `eve-memory-doctor`  | ночью     | autograph health/decay/moc/dedup + `git commit && push` vault |
+
+Ручной прогон: `npm run memory -- daily` (или `weekly`/`monthly`/`yearly`), `npm run doctor`.
+Статус: `systemctl --user list-timers`.
 
 ## Если переедешь на Vercel — нативное расписание
 На Vercel `defineSchedule` сам станет Vercel Cron Job. Создай `agent/schedules/morning.ts`:
