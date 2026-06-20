@@ -4,6 +4,8 @@
 
 **Универсальный персональный AI-агент с долговременной памятью. Который просто работает.**
 
+
+**Установка:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 ```
