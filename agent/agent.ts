@@ -1,8 +1,8 @@
 import { defineAgent } from "eve";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-// Провайдер модели выбирается на этапе setup (MODEL_PROVIDER): Ollama Cloud или OpenCode Zen.
-// Оба — OpenAI-совместимые, ключ из .env. Оба проверены на работу с российского IP.
+// Model provider is chosen at setup (MODEL_PROVIDER): Ollama Cloud or OpenCode Zen.
+// Both are OpenAI-compatible; the key comes from .env. Both work behind any network.
 const PROVIDER = process.env.MODEL_PROVIDER ?? "ollama";
 
 const PROVIDERS = {

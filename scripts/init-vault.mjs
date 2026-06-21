@@ -6,7 +6,7 @@
 // личные транскрипты/блобы/карточки НЕ должны попадать в код-репозиторий. Этот скрипт
 // копирует структуру из vault-template/ (если живой vault пуст) и git-init-ит его.
 // Идемпотентен: существующий vault с данными не перетирается.
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -29,7 +29,17 @@ mkdirSync(VAULT, { recursive: true });
 if (isEmpty(VAULT)) {
   // Копируем скелет (правила, autograph, dbrain-processor, schema.json, пустые каталоги).
   cpSync(TEMPLATE, VAULT, { recursive: true });
-  console.log(`init-vault: vault создан из шаблона → ${VAULT}`);
+
+  // Выбираем язык ядра памяти по AGENT_LANGUAGE: en → CORE.en.md перетирает CORE.md.
+  // Сидовый CORE.en.md из живого vault убираем в любом случае — в нём остаётся один CORE.md.
+  const lang = (process.env.AGENT_LANGUAGE ?? "ru").toLowerCase();
+  const coreEn = resolve(VAULT, "CORE.en.md");
+  if (existsSync(coreEn)) {
+    if (lang === "en") cpSync(coreEn, resolve(VAULT, "CORE.md"));
+    rmSync(coreEn);
+  }
+
+  console.log(`init-vault: vault создан из шаблона → ${VAULT} (CORE: ${lang})`);
 } else {
   console.log(`init-vault: vault уже содержит данные, шаблон не копирую → ${VAULT}`);
 }
