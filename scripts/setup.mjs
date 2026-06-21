@@ -256,6 +256,29 @@ async function main() {
   });
   out.DEEPGRAM_LANGUAGE = await ask("  Язык распознавания (multi = авто ru/uz/en)", out.DEEPGRAM_LANGUAGE || "multi");
 
+  // ── Веб-поиск: выбор провайдера + ключ ─────────────────────────────
+  // Без ключа выбранного провайдера web_search не работает (DuckDuckGo с серверного IP даёт капчу).
+  console.log(`\n  ${C.b}Веб-поиск${C.x} — чтобы Iva искала в интернете (Enter на ключе — пропустить, поиск будет выключен).`);
+  const SEARCH = [
+    { id: "tavily", key: "TAVILY_API_KEY", url: "https://app.tavily.com", note: "free ~1000/мес, без карты, есть answer ★" },
+    { id: "exa", key: "EXA_API_KEY", url: "https://dashboard.exa.ai", note: "free ~20k/мес, без карты" },
+    { id: "parallel", key: "PARALLEL_API_KEY", url: "https://platform.parallel.ai", note: "стартовые кредиты, без карты" },
+    { id: "brave", key: "BRAVE_API_KEY", url: "https://api-dashboard.search.brave.com", note: "нужна карта (идентификация), ~$5/мес кредит" },
+  ];
+  SEARCH.forEach((s, i) => console.log(`   ${i + 1}. ${s.id}  ${C.c}${s.url}${C.x}  ${C.y}(${s.note})${C.x}`));
+  const curSearch = existing.SEARCH_PROVIDER || out.SEARCH_PROVIDER || "tavily";
+  const defIdx = Math.max(0, SEARCH.findIndex((s) => s.id === curSearch));
+  const chSearch = await ask("  Провайдер поиска (номер)", String(defIdx + 1));
+  let si = parseInt(chSearch, 10) - 1;
+  if (isNaN(si) || si < 0 || si >= SEARCH.length) si = defIdx;
+  const prov = SEARCH[si];
+  out.SEARCH_PROVIDER = prov.id;
+  console.log(`  Ключ ${prov.id}: ${C.c}${prov.url}${C.x}${prov.id === "brave" ? `  ${C.y}(потребуется карта)${C.x}` : ""}. Enter — пропустить.`);
+  const keyExisting = process.env[prov.key] || existing[prov.key] || out[prov.key] || "";
+  let kv = await ask(`  ${prov.id} API key`, keyExisting ? mask(keyExisting) : "");
+  if (keyExisting && (!kv || kv.endsWith("…(оставить)"))) kv = keyExisting;
+  out[prov.key] = (kv || "").trim();
+
   // ── Шаг 3: Telegram-бот ───────────────────────────────────────────
   head(3, "Telegram-бот — через него вы говорите с Iva");
   console.log("  Создайте бота у @BotFather в Telegram:");
@@ -343,6 +366,8 @@ async function main() {
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_USERNAME", "TELEGRAM_WEBHOOK_SECRET_TOKEN",
     "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_DIGEST_CHAT_ID",
     "DEEPGRAM_API_KEY", "DEEPGRAM_LANGUAGE",
+    "SEARCH_PROVIDER",
+    "TAVILY_API_KEY", "BRAVE_API_KEY", "EXA_API_KEY", "PARALLEL_API_KEY",
     "ASSISTANT_TIMEZONE", "ASSISTANT_VAULT_DIR",
     "ASSISTANT_DATA_DIR", "IVA_PORT", "ASSISTANT_HOST", "ASSISTANT_BEARER",
   ];

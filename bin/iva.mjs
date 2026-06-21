@@ -255,6 +255,13 @@ function cmdDoctor() {
     else (bad(`.env неполный, нет: ${missing.join(", ")} — запустите: iva config`), badN++);
     // старые .env без IVA_PORT (или с :3000) — мигрируем здесь же
     if (migrateEnv()) fixN++;
+    // веб-поиск опционален; проверяем ключ ВЫБРАННОГО провайдера (SEARCH_PROVIDER)
+    const SEARCH_KEY = { tavily: "TAVILY_API_KEY", brave: "BRAVE_API_KEY", exa: "EXA_API_KEY", parallel: "PARALLEL_API_KEY" };
+    const sp = (env.SEARCH_PROVIDER || "tavily").trim().toLowerCase();
+    const skey = SEARCH_KEY[sp] || SEARCH_KEY.tavily;
+    if (!(env[skey] || "").trim())
+      (warn(`web_search: SEARCH_PROVIDER=${sp}, но ${skey} не задан — поиск не работает (iva config)`), warnN++);
+    else (ok(`web_search: ${sp}`), okN++);
   }
 
   // 3. Сборка
