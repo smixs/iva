@@ -19,7 +19,8 @@ if (!period || !PERIODS.includes(period)) {
   process.exit(1);
 }
 
-const HOST = process.env.ASSISTANT_HOST ?? "http://127.0.0.1:3000";
+const PORT = process.env.IVA_PORT ?? "8723";
+const HOST = process.env.ASSISTANT_HOST ?? `http://127.0.0.1:${PORT}`;
 const BEARER = process.env.ASSISTANT_BEARER; // нужен, если eve-канал в проде требует auth
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT = process.env.TELEGRAM_DIGEST_CHAT_ID;

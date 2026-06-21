@@ -58,7 +58,8 @@ npm run dev            # интерактивный TUI (eve dev), сервер 
 ```bash
 npm ci
 npm exec -- eve build         # → ./.output
-node .output/server/index.mjs # или npm start (eve start); порт через PORT (по умолчанию 3000)
+node .output/server/index.mjs # или npm start (eve start); порт через PORT/NITRO_PORT (дефолт Nitro 3000)
+                              # 8723 задаёт не сервер, а юнит/.env от iva (PORT=$IVA_PORT)
 ```
 Запускай под process-manager (systemd/pm2) с подгрузкой `.env`. Пример systemd-юнита:
 ```ini
@@ -66,8 +67,10 @@ node .output/server/index.mjs # или npm start (eve start); порт чере�
 WorkingDirectory=/srv/assistant
 EnvironmentFile=/srv/assistant/.env
 ExecStart=/usr/bin/node /srv/assistant/.output/server/index.mjs
+Environment=PORT=8723   # literal: systemd не подставит $IVA_PORT из .env; должен совпадать с IVA_PORT
 Restart=always
 ```
+(Юнит, который генерирует сам `iva`, уже бакает `Environment=PORT=$IVA_PORT` — этот ручной пример нужно держать в синхроне.)
 Перед публичным доступом: nginx reverse-proxy + TLS (Let's Encrypt) на домен.
 
 ### Авторизация eve-канала в проде
@@ -84,7 +87,7 @@ Scaffold-канал использует `localDev()` + `placeholderAuth()`. В 
 systemctl --user status iva-telegram-poll
 journalctl --user -u iva-telegram-poll -f
 ```
-Реализация: `scripts/telegram-poll.mjs` (`getUpdates` → `POST 127.0.0.1:3000/eve/v1/telegram`
+Реализация: `scripts/telegram-poll.mjs` (`getUpdates` → `POST 127.0.0.1:$IVA_PORT/eve/v1/telegram`
 с заголовком `X-Telegram-Bot-Api-Secret-Token`). Offset хранится в `data/telegram-offset.json`.
 
 ### Webhook (опционально, если есть публичный HTTPS)

@@ -15,7 +15,8 @@ import { join } from "node:path";
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN;
-const HOST = (process.env.ASSISTANT_HOST ?? "http://127.0.0.1:3000").replace(/\/$/, "");
+const PORT = process.env.IVA_PORT ?? "8723";
+const HOST = (process.env.ASSISTANT_HOST ?? `http://127.0.0.1:${PORT}`).replace(/\/$/, "");
 const DATA_DIR = process.env.ASSISTANT_DATA_DIR ?? "data";
 const ROUTE = `${HOST}/eve/v1/telegram`;
 const API = `https://api.telegram.org/bot${TOKEN}`;

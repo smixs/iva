@@ -6,7 +6,8 @@
 // Требует: запущенный агент (eve start) и переменные TELEGRAM_BOT_TOKEN, TELEGRAM_DIGEST_CHAT_ID.
 import { Client } from "eve/client";
 
-const HOST = process.env.ASSISTANT_HOST ?? "http://127.0.0.1:3000";
+const PORT = process.env.IVA_PORT ?? "8723";
+const HOST = process.env.ASSISTANT_HOST ?? `http://127.0.0.1:${PORT}`;
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT = process.env.TELEGRAM_DIGEST_CHAT_ID;
 const BEARER = process.env.ASSISTANT_BEARER; // нужен, если eve-канал в проде требует auth
