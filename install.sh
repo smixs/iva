@@ -77,8 +77,8 @@ IVA_TREE
 on_err() {
   local rc=$?
   echo >&2
-  echo "${c_red}✗ Установка прервалась (код $rc). Упала команда: ${BASH_COMMAND}${c_reset}" >&2
-  echo "${c_yellow}  Скопируйте вывод выше и пришлите — разберёмся.${c_reset}" >&2
+  echo "${c_red}✗ $(t "Install aborted (code $rc). Failing command: ${BASH_COMMAND}" "Установка прервалась (код $rc). Упала команда: ${BASH_COMMAND}")${c_reset}" >&2
+  echo "${c_yellow}  $(t "Copy the output above and send it over — we'll sort it out." "Скопируйте вывод выше и пришлите — разберёмся.")${c_reset}" >&2
 }
 trap on_err ERR
 
@@ -97,7 +97,7 @@ while [ $# -gt 0 ]; do
     -h|--help)
       sed -n '2,19p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    *) warn "неизвестный флаг: $1 (игнорирую)" ;;
+    *) warn "$(t "unknown flag: $1 (ignoring)" "неизвестный флаг: $1 (игнорирую)")" ;;
   esac
   shift
 done
@@ -184,7 +184,7 @@ ensure_swap
 #    ffmpeg опционален (nova-3 обычно принимает видео напрямую); pandoc/poppler —
 #    извлечение текста из присланных docx/pdf.
 # ─────────────────────────────────────────────────────────────────────────
-command -v curl >/dev/null || die "нужен curl (установи: apt/brew install curl)"
+command -v curl >/dev/null || die "$(t "curl is required (install: apt/brew install curl)" "нужен curl (установи: apt/brew install curl)")"
 
 PM="none"
 if   command -v apt-get >/dev/null 2>&1; then PM="apt"
@@ -205,17 +205,17 @@ fi
 
 if [ "${#need_pkgs[@]}" -gt 0 ]; then
   if [ "$PM" = "none" ]; then
-    warn "не найден пакетный менеджер — установи вручную: ${need_pkgs[*]}"
-    command -v git >/dev/null 2>&1 || die "git обязателен для установки"
+    warn "$(t "no package manager found — install manually: ${need_pkgs[*]}" "не найден пакетный менеджер — установи вручную: ${need_pkgs[*]}")"
+    command -v git >/dev/null 2>&1 || die "$(t "git is required to install" "git обязателен для установки")"
   else
-    step "Нужны системные пакеты: ${need_pkgs[*]} (через $PM)"
+    step "$(t "Need system packages: ${need_pkgs[*]} (via $PM)" "Нужны системные пакеты: ${need_pkgs[*]} (через $PM)")"
     # Кешируем sudo-пароль один раз в начале (если не root и нужен sudo).
     if [ "$(id -u)" -ne 0 ] && [ "$PM" != "brew" ]; then
-      sudo -v || warn "sudo недоступен — системные пакеты могут не установиться"
+      sudo -v || warn "$(t "sudo unavailable — system packages may not install" "sudo недоступен — системные пакеты могут не установиться")"
     fi
     case "$PM" in
       apt)
-        run_root apt-get update -qq || warn "apt-get update не прошёл"
+        run_root apt-get update -qq || warn "$(t "apt-get update failed" "apt-get update не прошёл")"
         for p in "${need_pkgs[@]}"; do
           if [ "$p" = "gh" ]; then
             # gh нет в базовых репах Debian/Ubuntu — добавляем официальный источник.
@@ -226,36 +226,36 @@ if [ "${#need_pkgs[@]}" -gt 0 ]; then
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
               | run_root tee /etc/apt/sources.list.d/github-cli.list >/dev/null
             run_root apt-get update -qq
-            run_root apt-get install -y -qq gh || warn "не удалось поставить gh"
+            run_root apt-get install -y -qq gh || warn "$(t "couldn't install gh" "не удалось поставить gh")"
           else
-            run_root apt-get install -y -qq "$p" || warn "не удалось поставить $p"
+            run_root apt-get install -y -qq "$p" || warn "$(t "couldn't install $p" "не удалось поставить $p")"
           fi
         done
         ;;
       dnf)
-        run_root dnf install -y -q "${need_pkgs[@]}" || warn "часть пакетов не установилась (${need_pkgs[*]})"
+        run_root dnf install -y -q "${need_pkgs[@]}" || warn "$(t "some packages didn't install (${need_pkgs[*]})" "часть пакетов не установилась (${need_pkgs[*]})")"
         ;;
       brew)
-        for p in "${need_pkgs[@]}"; do brew install "$p" || warn "не удалось поставить $p"; done
+        for p in "${need_pkgs[@]}"; do brew install "$p" || warn "$(t "couldn't install $p" "не удалось поставить $p")"; done
         ;;
     esac
   fi
 fi
-command -v git >/dev/null 2>&1 && ok "git $(git --version | awk '{print $3}')" || die "git так и не установлен"
-command -v gh  >/dev/null 2>&1 && ok "gh готов" || warn "gh нет — vault-бэкап в git настроишь позже"
-command -v ffmpeg >/dev/null 2>&1 && ok "ffmpeg готов" || warn "ffmpeg нет (nova-3 обычно принимает видео напрямую)"
+command -v git >/dev/null 2>&1 && ok "git $(git --version | awk '{print $3}')" || die "$(t "git still not installed" "git так и не установлен")"
+command -v gh  >/dev/null 2>&1 && ok "$(t "gh ready" "gh готов")" || warn "$(t "no gh — set up the vault git backup later" "gh нет — vault-бэкап в git настроишь позже")"
+command -v ffmpeg >/dev/null 2>&1 && ok "$(t "ffmpeg ready" "ffmpeg готов")" || warn "$(t "no ffmpeg (nova-3 usually accepts video directly)" "ffmpeg нет (nova-3 обычно принимает видео напрямую)")"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2. uv (Python-менеджер для autograph-скриптов vault)
 # ─────────────────────────────────────────────────────────────────────────
 if command -v uv >/dev/null 2>&1 || [ -x "$HOME/.local/bin/uv" ]; then
-  ok "uv уже установлен"
+  ok "$(t "uv already installed" "uv уже установлен")"
 else
-  step "Устанавливаю uv…"
+  step "$(t "Installing uv…" "Устанавливаю uv…")"
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
-command -v uv >/dev/null 2>&1 && ok "uv $(uv --version 2>/dev/null | awk '{print $2}')" || warn "uv не на PATH — откройте новый шелл"
+command -v uv >/dev/null 2>&1 && ok "uv $(uv --version 2>/dev/null | awk '{print $2}')" || warn "$(t "uv not on PATH — open a new shell" "uv не на PATH — откройте новый шелл")"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 3. Node 24+ (через nvm, без root)
@@ -266,7 +266,7 @@ if command -v node >/dev/null; then
   if [ "$major" -ge "$NODE_MAJOR_MIN" ]; then need_node=0; fi
 fi
 if [ "$need_node" -eq 1 ]; then
-  step "Устанавливаю Node $NODE_MAJOR_MIN+ через nvm…"
+  step "$(t "Installing Node $NODE_MAJOR_MIN+ via nvm…" "Устанавливаю Node $NODE_MAJOR_MIN+ через nvm…")"
   export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
   if [ ! -s "$NVM_DIR/nvm.sh" ]; then
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
@@ -288,7 +288,7 @@ if [ "$need_node" -eq 1 ]; then
   fi
   if [ -n "${NODE_BIN_DIR:-}" ]; then export PATH="$NODE_BIN_DIR:$PATH"; fi
 fi
-command -v node >/dev/null 2>&1 || die "Node $NODE_MAJOR_MIN+ не установился. Поставьте вручную (nvm install $NODE_MAJOR_MIN) и перезапустите."
+command -v node >/dev/null 2>&1 || die "$(t "Node $NODE_MAJOR_MIN+ failed to install. Install it manually (nvm install $NODE_MAJOR_MIN) and re-run." "Node $NODE_MAJOR_MIN+ не установился. Поставьте вручную (nvm install $NODE_MAJOR_MIN) и перезапустите.")"
 ok "Node $(node -v)"
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -301,13 +301,13 @@ if [ -n "$SOURCE" ] && [ -f "$SOURCE" ]; then
 fi
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/package.json" ] && grep -q '"eve"' "$SCRIPT_DIR/package.json"; then
   PROJECT_DIR="$SCRIPT_DIR"
-  step "Использую текущий каталог: $PROJECT_DIR"
+  step "$(t "Using current directory: $PROJECT_DIR" "Использую текущий каталог: $PROJECT_DIR")"
 elif [ -d "$INSTALL_DIR/.git" ]; then
   PROJECT_DIR="$INSTALL_DIR"
-  step "Обновляю $PROJECT_DIR…"
+  step "$(t "Updating $PROJECT_DIR…" "Обновляю $PROJECT_DIR…")"
   git -C "$PROJECT_DIR" pull --ff-only origin "$BRANCH"
 else
-  step "Клонирую $REPO_URL → $INSTALL_DIR…"
+  step "$(t "Cloning $REPO_URL → $INSTALL_DIR…" "Клонирую $REPO_URL → $INSTALL_DIR…")"
   git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   PROJECT_DIR="$INSTALL_DIR"
 fi
@@ -316,9 +316,9 @@ cd "$PROJECT_DIR"
 # ─────────────────────────────────────────────────────────────────────────
 # 5. npm-зависимости
 # ─────────────────────────────────────────────────────────────────────────
-step "Ставлю зависимости…"
+step "$(t "Installing dependencies…" "Ставлю зависимости…")"
 if [ -f package-lock.json ]; then npm ci; else npm install; fi
-ok "Зависимости установлены"
+ok "$(t "Dependencies installed" "Зависимости установлены")"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 5b. Браузер agent-browser (веб-автоматизация: формы, логины, скриншоты, парсинг)
@@ -326,32 +326,32 @@ ok "Зависимости установлены"
 # Бинарь ставится в npm-global; путь нужен и здесь, и в PATH сервиса (ниже).
 NPM_GLOBAL_BIN="$(npm prefix -g 2>/dev/null)/bin"
 export PATH="$NPM_GLOBAL_BIN:$PATH"
-step "Ставлю браузер agent-browser (для веб-задач)"
-echo "  ${c_yellow}Дальше скачается Chromium и системные библиотеки — это дольше всего (1–3 мин).${c_reset}"
-echo "  ${c_yellow}Поток вывода ниже = работа идёт под капотом, НЕ прерывай. Может снова спросить пароль sudo.${c_reset}"
+step "$(t "Installing the agent-browser (for web tasks)" "Ставлю браузер agent-browser (для веб-задач)")"
+echo "  ${c_yellow}$(t "Next it downloads Chromium and system libraries — the longest step (1–3 min)." "Дальше скачается Chromium и системные библиотеки — это дольше всего (1–3 мин).")${c_reset}"
+echo "  ${c_yellow}$(t "The output below = work under the hood, do NOT interrupt. It may ask for the sudo password again." "Поток вывода ниже = работа идёт под капотом, НЕ прерывай. Может снова спросить пароль sudo.")${c_reset}"
 # Обновляем sudo-кеш заранее (видимый запрос здесь, а не скрытый посреди установки).
 if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v 2>/dev/null || true; fi
 # Вывод НЕ глушим: пользователь должен видеть прогресс (загрузка/apt), иначе кажется, что зависло.
 if npm i -g agent-browser; then
-  step "Скачиваю Chromium + системные библиотеки…"
+  step "$(t "Downloading Chromium + system libraries…" "Скачиваю Chromium + системные библиотеки…")"
   agent-browser install --with-deps \
-    || warn "agent-browser install --with-deps не прошёл — доставишь позже: agent-browser install --with-deps"
+    || warn "$(t "agent-browser install --with-deps failed — finish later: agent-browser install --with-deps" "agent-browser install --with-deps не прошёл — доставишь позже: agent-browser install --with-deps")"
   # Chrome на Ubuntu 23.10+/24.04 не стартует: ядро запрещает unprivileged user
   # namespaces (AppArmor) → "No usable sandbox". На Linux включаем --no-sandbox
   # дефолтом для всех вызовов agent-browser (идемпотентно, не затирая чужой config).
   if [ "$(uname -s)" = "Linux" ]; then
     node -e 'const fs=require("fs"),os=require("os"),p=require("path");const d=p.join(os.homedir(),".agent-browser"),f=p.join(d,"config.json");fs.mkdirSync(d,{recursive:true});let c={};try{c=JSON.parse(fs.readFileSync(f,"utf8"))}catch{}const w="--no-sandbox";const cur=typeof c.args=="string"?c.args:Array.isArray(c.args)?c.args.join(","):"";if(!cur.split(/[,\n]/).map(s=>s.trim()).filter(Boolean).includes(w)){c.args=cur?cur+","+w:w;fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n")}' \
-      2>/dev/null || warn "не настроил ~/.agent-browser/config.json — добавь \"args\": \"--no-sandbox\" вручную"
+      2>/dev/null || warn "$(t "couldn't configure ~/.agent-browser/config.json — add \"args\": \"--no-sandbox\" manually" "не настроил ~/.agent-browser/config.json — добавь \"args\": \"--no-sandbox\" вручную")"
   fi
   # Реальная проверка запуска: doctor игнорирует config-args и ложно ругается на sandbox.
   if agent-browser open about:blank >/dev/null 2>&1; then
     agent-browser close --all >/dev/null 2>&1 || true
-    ok "agent-browser готов"
+    ok "$(t "agent-browser ready" "agent-browser готов")"
   else
-    warn "agent-browser поставлен, но Chrome не запустился — проверьте позже: agent-browser open about:blank"
+    warn "$(t "agent-browser installed but Chrome didn't start — check later: agent-browser open about:blank" "agent-browser поставлен, но Chrome не запустился — проверьте позже: agent-browser open about:blank")"
   fi
 else
-  warn "не удалось поставить agent-browser — браузерные задачи недоступны, остальное работает"
+  warn "$(t "couldn't install agent-browser — browser tasks unavailable, everything else works" "не удалось поставить agent-browser — браузерные задачи недоступны, остальное работает")"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -360,20 +360,20 @@ fi
 # ─────────────────────────────────────────────────────────────────────────
 SETUP_DONE=false
 if [ "$RUN_SETUP" = false ]; then
-  warn "Настройка пропущена (флаг). Запустите потом: cd $PROJECT_DIR && npm run setup"
+  warn "$(t "Setup skipped (flag). Run it later: cd $PROJECT_DIR && npm run setup" "Настройка пропущена (флаг). Запустите потом: cd $PROJECT_DIR && npm run setup")"
 elif have_tty; then
-  step "Настройка…"
+  step "$(t "Setup…" "Настройка…")"
   node scripts/setup.mjs < /dev/tty && SETUP_DONE=true
 else
-  warn "Нет терминала (/dev/tty) — пропускаю мастер. Запустите потом: cd $PROJECT_DIR && npm run setup"
+  warn "$(t "No terminal (/dev/tty) — skipping the wizard. Run it later: cd $PROJECT_DIR && npm run setup" "Нет терминала (/dev/tty) — пропускаю мастер. Запустите потом: cd $PROJECT_DIR && npm run setup")"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────
 # 7. Сборка
 # ─────────────────────────────────────────────────────────────────────────
-step "Собираю агента (eve build)…"
+step "$(t "Building the agent (eve build)…" "Собираю агента (eve build)…")"
 npm exec -- eve build
-ok "Сборка готова → .output"
+ok "$(t "Build ready → .output" "Сборка готова → .output")"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8. Live-vault: ОТДЕЛЬНЫЙ приватный git-репо (память + бэкап + Obsidian)
@@ -385,20 +385,20 @@ case "$VAULT_DIR_REL" in
   /*) VAULT_PATH="$VAULT_DIR_REL" ;;
   *)  VAULT_PATH="$PROJECT_DIR/$VAULT_DIR_REL" ;;
 esac
-step "Готовлю live-vault из шаблона…"
-ASSISTANT_VAULT_DIR="$VAULT_DIR_REL" node scripts/init-vault.mjs || warn "init-vault не отработал — проверьте vault вручную"
+step "$(t "Preparing the live vault from the template…" "Готовлю live-vault из шаблона…")"
+ASSISTANT_VAULT_DIR="$VAULT_DIR_REL" node scripts/init-vault.mjs || warn "$(t "init-vault didn't run — check the vault manually" "init-vault не отработал — проверьте vault вручную")"
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8.5. Команда `iva` в ~/.local/bin (update/config/doctor/uninstall/...).
 #     Wrapper с зашитыми путями node+проект — работает из любого shell.
 # ─────────────────────────────────────────────────────────────────────────
-step "Ставлю команду iva в ~/.local/bin…"
+step "$(t "Installing the iva command in ~/.local/bin…" "Ставлю команду iva в ~/.local/bin…")"
 mkdir -p "$HOME/.local/bin"
 printf '#!/usr/bin/env bash\nexec "%s" "%s/bin/iva.mjs" "$@"\n' "$(command -v node)" "$PROJECT_DIR" > "$HOME/.local/bin/iva"
 chmod +x "$HOME/.local/bin/iva"
 case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ok "Команда iva готова — попробуй: iva help" ;;
-  *) warn "Добавь ~/.local/bin в PATH, чтобы звать iva напрямую (или: \$HOME/.local/bin/iva help)" ;;
+  *":$HOME/.local/bin:"*) ok "$(t "The iva command is ready — try: iva help" "Команда iva готова — попробуй: iva help")" ;;
+  *) warn "$(t "Add ~/.local/bin to PATH to call iva directly (or: \$HOME/.local/bin/iva help)" "Добавь ~/.local/bin в PATH, чтобы звать iva напрямую (или: \$HOME/.local/bin/iva help)")" ;;
 esac
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -407,29 +407,30 @@ esac
 if ! command -v systemctl >/dev/null 2>&1; then
   : # не Linux/systemd — пропускаем тихо
 elif [ ! -f .env ]; then
-  warn "Нет .env — автозапуск не настраиваю. Сначала: npm run setup, потом перезапустите install.sh."
-elif prompt_yes_no "Завести автозапуск через systemd (сервис + таймеры памяти)?" yes; then
+  warn "$(t "No .env — not setting up autostart. First: npm run setup, then re-run install.sh." "Нет .env — автозапуск не настраиваю. Сначала: npm run setup, потом перезапустите install.sh.")"
+elif prompt_yes_no "$(t "Set up autostart via systemd (service + memory timers)?" "Завести автозапуск через systemd (сервис + таймеры памяти)?")" yes; then
   # Запись юнитов делегируем iva CLI — единый источник правды (см. bin/iva.mjs writeUnits).
-  step "Ставлю systemd-юниты (через iva CLI)…"
-  node "$PROJECT_DIR/bin/iva.mjs" _install-units || die "не удалось записать systemd-юниты"
+  step "$(t "Installing systemd units (via the iva CLI)…" "Ставлю systemd-юниты (через iva CLI)…")"
+  node "$PROJECT_DIR/bin/iva.mjs" _install-units || die "$(t "couldn't write the systemd units" "не удалось записать systemd-юниты")"
   poll_installed=1
   timers_installed=1
 
   systemctl --user enable --now iva.service
   if [ "$poll_installed" -eq 1 ]; then
     systemctl --user enable --now iva-telegram-poll.service \
-      && ok "Бот включён и на связи" \
-      || warn "не удалось запустить iva-telegram-poll (вручную: npm run poll)"
+      && ok "$(t "Bot enabled and online" "Бот включён и на связи")" \
+      || warn "$(t "couldn't start iva-telegram-poll (manually: npm run poll)" "не удалось запустить iva-telegram-poll (вручную: npm run poll)")"
   fi
   if [ "$timers_installed" -eq 1 ]; then
     for t in "$PROJECT_DIR"/deploy/iva-memory-*.timer; do
       [ -e "$t" ] || continue
-      systemctl --user enable --now "$(basename "$t")" || warn "не удалось включить $(basename "$t")"
+      tname="$(basename "$t")"
+      systemctl --user enable --now "$tname" || warn "$(t "couldn't enable $tname" "не удалось включить $tname")"
     done
-    ok "Таймеры памяти включены: systemctl --user list-timers"
+    ok "$(t "Memory timers enabled: systemctl --user list-timers" "Таймеры памяти включены: systemctl --user list-timers")"
   fi
-  loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "не удалось включить linger (сервис не стартует до логина)"
-  ok "Сервис запущен: systemctl --user status iva"
+  loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "$(t "couldn't enable linger (the service won't start before login)" "не удалось включить linger (сервис не стартует до логина)")"
+  ok "$(t "Service started: systemctl --user status iva" "Сервис запущен: systemctl --user status iva")"
 
   # Мгновенное подтверждение в Telegram (прямой Bot API — не зависит от сервера).
   _bot="$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | head -n1 | cut -d= -f2- | tr -d '"' || true)"
