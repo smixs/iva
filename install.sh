@@ -18,7 +18,7 @@
 #   --non-interactive   не задавать никаких вопросов (берёт дефолты; настройку пропускает)
 #   -h, --help          показать эту справку
 # Мгновенная реассурация: первый вывод сразу, чтобы не было тишины на старте.
-printf '\n  \033[36m⏳ Идёт подготовка окружения — это может занять до минуты. Не прерывай процесс…\033[0m\n'
+printf '\n  \033[36m⏳ Preparing environment / Идёт подготовка окружения — up to a minute, do not interrupt…\033[0m\n'
 set -Eeuo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/smixs/iva.git}"
@@ -31,6 +31,11 @@ step() { echo "${c_blue}▸ $*${c_reset}"; }
 ok()   { echo "${c_green}✓ $*${c_reset}"; }
 warn() { echo "${c_yellow}! $*${c_reset}"; }
 die()  { echo "${c_red}✗ $*${c_reset}" >&2; exit 1; }
+
+# Язык установщика и дефолтный язык ответов агента. Дефолт — English (глобальная аудитория);
+# спрашивается ПЕРВЫМ вопросом (pick_language ниже). t en ru — выбор строки по языку.
+IVA_LANG=en
+t() { if [ "$IVA_LANG" = ru ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
 
 show_tree() {
   [ -t 1 ] || return 0   # только в реальном терминале (не в логах/CI)
@@ -115,9 +120,29 @@ prompt_yes_no() {
   case "$answer" in [yY]|[yY][eE][sS]) return 0 ;; *) return 1 ;; esac
 }
 
+# Язык — САМЫЙ ПЕРВЫЙ вопрос, до системной возни. Двуязычный промпт, дефолт English.
+# Выбор кладём в AGENT_LANGUAGE и экспортируем → его подхватят setup.mjs и init-vault.mjs,
+# поэтому язык спрашивается ровно один раз.
+pick_language() {
+  local ans=""
+  if [ "$NON_INTERACTIVE" != true ]; then
+    printf '\n  %b🌐 Language / Язык%b\n' "${c_bold}${c_blue}" "$c_reset"
+    printf '    [1] English  %b(default)%b\n    [2] Русский\n' "$c_green" "$c_reset"
+    if   [ "$IS_INTERACTIVE" = true ]; then read -r -p "  > " ans || ans=""
+    elif have_tty; then printf '  > ' > /dev/tty; IFS= read -r ans < /dev/tty || ans=""
+    else ans=""; fi
+  fi
+  case "$(printf '%s' "$ans" | tr -d '[:space:]')" in
+    2|ru|RU|[Рр]ус*) IVA_LANG=ru ;;
+    *) IVA_LANG=en ;;
+  esac
+  export AGENT_LANGUAGE="$IVA_LANG"
+}
+
 echo
 show_tree
-echo "  ${c_green}Iva${c_reset} — личный агент с долговременной памятью, который просто работает"
+pick_language   # ← первый вопрос: язык (дефолт English), до любой установки
+echo "  ${c_green}Iva${c_reset} — $(t "your personal long-term-memory agent that just works" "личный агент с долговременной памятью, который просто работает")"
 echo "  ─────────────────────────────────────────────"
 
 # root запускает напрямую; иначе через sudo (один раз кешируем пароль).
@@ -384,9 +409,9 @@ elif prompt_yes_no "Завести автозапуск через systemd (се
   if [ -n "$_bot" ] && [ -n "$_chat" ]; then
     curl -s "https://api.telegram.org/bot$_bot/sendMessage" \
       --data-urlencode "chat_id=$_chat" \
-      --data-urlencode "text=✅ Iva установлена и на связи. Напишите мне сообщение — отвечу." >/dev/null 2>&1 \
-      && ok "Отправил вам подтверждение в Telegram — откройте чат с ботом" \
-      || warn "не смог отправить подтверждение (бот всё равно работает — просто напишите ему)"
+      --data-urlencode "text=$(t "✅ Iva is installed and online. Send me a message — I'll reply." "✅ Iva установлена и на связи. Напишите мне сообщение — отвечу.")" >/dev/null 2>&1 \
+      && ok "$(t "Sent you a confirmation in Telegram — open the chat with the bot" "Отправил вам подтверждение в Telegram — откройте чат с ботом")" \
+      || warn "$(t "couldn't send the confirmation (the bot still works — just message it)" "не смог отправить подтверждение (бот всё равно работает — просто напишите ему)")"
   fi
 fi
 
@@ -395,26 +420,26 @@ fi
 # ─────────────────────────────────────────────────────────────────────────
 echo
 echo "${c_green}${c_bold}┌──────────────────────────────────────────┐${c_reset}"
-echo "${c_green}${c_bold}│            ✓ Установка завершена          │${c_reset}"
+echo "${c_green}${c_bold}│            $(t "✓ Installation complete   " "✓ Установка завершена      ")│${c_reset}"
 echo "${c_green}${c_bold}└──────────────────────────────────────────┘${c_reset}"
 echo
 if [ "$SETUP_DONE" != true ]; then
-  echo "  ${c_yellow}${c_bold}Сначала настройте ключи:${c_reset}  cd $PROJECT_DIR && npm run setup"
-  echo "  Затем пересоберите и запустите: npm run build && (systemctl --user restart iva)"
+  echo "  ${c_yellow}${c_bold}$(t "Configure the keys first:" "Сначала настройте ключи:")${c_reset}  cd $PROJECT_DIR && npm run setup"
+  echo "  $(t "Then rebuild and start:" "Затем пересоберите и запустите:") npm run build && (systemctl --user restart iva)"
   echo
 fi
-echo "  ${c_bold}Команды (${c_green}iva${c_reset}${c_bold} — из любого места):${c_reset}"
-echo "    iva update        обновить (git pull + сборка + рестарт)"
-echo "    iva config        настройка (модель/Telegram/Deepgram/TZ/vault)"
-echo "    iva doctor        диагностика и авто-починка установки"
-echo "    iva status        статус сервисов и таймеров"
-echo "    iva help          все команды"
+echo "  ${c_bold}$(t "Commands (${c_green}iva${c_reset}${c_bold} — from anywhere):" "Команды (${c_green}iva${c_reset}${c_bold} — из любого места):")${c_reset}"
+echo "    iva update        $(t "update (git pull + build + restart)" "обновить (git pull + сборка + рестарт)")"
+echo "    iva config        $(t "configure (model/Telegram/Deepgram/TZ/vault)" "настройка (модель/Telegram/Deepgram/TZ/vault)")"
+echo "    iva doctor        $(t "diagnose and auto-fix the install" "диагностика и авто-починка установки")"
+echo "    iva status        $(t "services and timers status" "статус сервисов и таймеров")"
+echo "    iva help          $(t "all commands" "все команды")"
 echo
-echo "  ${c_yellow}${c_bold}Vault-бэкап в git${c_reset} (один раз — приватный remote для памяти):"
+echo "  ${c_yellow}${c_bold}$(t "Vault backup in git" "Vault-бэкап в git")${c_reset} $(t "(one-time — a private remote for your memory):" "(один раз — приватный remote для памяти):")"
 echo "    gh auth login"
 echo "    gh repo create <user>/iva-vault --private --source=\"$VAULT_PATH\" --remote=origin --push"
 echo
-echo "  ${c_green}${c_bold}✅ Бот готов${c_reset} — просто напишите ему в Telegram."
-echo "    Статус бота:  systemctl --user status iva-telegram-poll"
-echo "    Логи бота:    journalctl --user -u iva-telegram-poll -f"
+echo "  ${c_green}${c_bold}$(t "✅ The bot is ready" "✅ Бот готов")${c_reset} — $(t "just message it in Telegram." "просто напишите ему в Telegram.")"
+echo "    $(t "Bot status:" "Статус бота:")  systemctl --user status iva-telegram-poll"
+echo "    $(t "Bot logs:" "Логи бота:")    journalctl --user -u iva-telegram-poll -f"
 echo

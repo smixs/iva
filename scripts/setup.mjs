@@ -209,11 +209,18 @@ async function main() {
   const out = { ...existing };
 
   // ── Language: UI + agent's default reply language ─────────────────
-  console.log(`\n${C.b}${C.c}  🌐 Language / Язык${C.x}`);
-  console.log("    1) English");
-  console.log("    2) Русский");
-  const langChoice = await ask("  Choose / Выбор (1/2)", existing.AGENT_LANGUAGE === "ru" ? "2" : "1");
-  LANG = langChoice.trim() === "2" ? "ru" : "en";
+  // install.sh спрашивает язык ПЕРВЫМ и прокидывает через окружение (AGENT_LANGUAGE) —
+  // тогда не спрашиваем повторно. При самостоятельном `npm run setup` env пуст → спросим.
+  const envLang = (process.env.AGENT_LANGUAGE || "").toLowerCase();
+  if (envLang === "en" || envLang === "ru") {
+    LANG = envLang;
+  } else {
+    console.log(`\n${C.b}${C.c}  🌐 Language / Язык${C.x}`);
+    console.log("    1) English");
+    console.log("    2) Русский");
+    const langChoice = await ask("  Choose / Выбор (1/2)", existing.AGENT_LANGUAGE === "ru" ? "2" : "1");
+    LANG = langChoice.trim() === "2" ? "ru" : "en";
+  }
   out.AGENT_LANGUAGE = LANG;
   console.log(`  → ${t("Iva will reply in English by default.", "Iva будет отвечать по-русски по умолчанию.")}`);
 
