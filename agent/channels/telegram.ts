@@ -333,39 +333,26 @@ export default telegramChannel({
       const caption = (message.caption || "").trim();
       await ctx.telegram.startTyping();
       try {
-        // getFile → file_path. Файлы >20MB Bot API не отдаёт (getFile вернёт ошибку).
-        const fileRes = await ctx.telegram.request("getFile", { file_id: media.fileId });
-        const fileBody = fileRes.body as
-          | { ok?: boolean; description?: string; result?: { file_path?: string } }
-          | null;
-        const filePath = fileBody?.result?.file_path;
-
-        if (!filePath) {
-          const desc = String(fileBody?.description ?? "");
-          if (/too big/i.test(desc)) {
-            // Грациозный фолбэк: фиксируем факт + подпись, отвечаем юзеру, дропаем апдейт.
-            const note = `(файл >20MB — Telegram не отдаёт его ботам)${caption ? `\n\n${caption}` : ""}`;
-            appendDaily(tag, note);
-            try {
-              await ctx.telegram.sendMessage(
-                "Файл больше 20 МБ — Telegram не отдаёт такие ботам. " +
-                  "Подпись сохранил; перешли файл иначе (ссылкой/частями).",
-              );
-            } catch {
-              /* молча игнорируем сбой ответа */
-            }
-            return null;
+        // getFile → скачивание байтов через тот же хелпер, что у вложений (DRY).
+        const f = await fetchTelegramFile((m, b) => ctx.telegram.request(m, b), media.fileId);
+        if (f && "tooBig" in f) {
+          // >20MB Bot API ботам не отдаёт: фиксируем факт + подпись, отвечаем юзеру, дропаем апдейт.
+          const note = `(файл >20MB — Telegram не отдаёт его ботам)${caption ? `\n\n${caption}` : ""}`;
+          appendDaily(tag, note);
+          try {
+            await ctx.telegram.sendMessage(
+              "Файл больше 20 МБ — Telegram не отдаёт такие ботам. " +
+                "Подпись сохранил; перешли файл иначе (ссылкой/частями).",
+            );
+          } catch {
+            /* молча игнорируем сбой ответа */
           }
-          throw new Error(`getFile failed: ${desc || "no file_path"}`);
+          return null;
         }
+        // null = getFile без file_path (не too-big) либо скачивание !ok — общий диагностический фолбэк.
+        if (!f) throw new Error("getFile/скачивание не удалось");
 
-        // Скачиваем байты напрямую с file-эндпоинта Telegram.
-        const token = process.env.TELEGRAM_BOT_TOKEN ?? "";
-        const dl = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
-        if (!dl.ok) throw new Error(`download HTTP ${dl.status}`);
-        const audio = await dl.arrayBuffer();
-
-        const transcript = (await transcribe(audio)).trim();
+        const transcript = (await transcribe(f.bytes)).trim();
         if (!transcript) {
           try {
             await ctx.telegram.sendMessage("Не удалось распознать запись — пусто.");
