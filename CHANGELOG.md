@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6] - 2026-06-24
+
+Patch: usage reports in English.
+
+- 🌍 **English `/usage` output** — `/usage` and `iva usage` now report in English (`in` / `out` / `cached`, plus window and source labels), matching the project's English-first surface. The source label also normalizes the raw channel kind (e.g. `channel:telegram` → `chat`).
+
+[0.1.6]: https://github.com/smixs/iva/releases/tag/v0.1.6
+
 ## [0.1.5] - 2026-06-24
 
 Feature: local token-usage accounting (issue #7).
