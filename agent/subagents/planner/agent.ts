@@ -6,6 +6,7 @@ const ollama = createOpenAICompatible({
   name: "ollama-cloud",
   baseURL: "https://ollama.com/v1",
   apiKey: process.env.OLLAMA_API_KEY,
+  includeUsage: true, // иначе step.completed приходит без usage — см. agent/agent.ts
 });
 
 const MODEL = process.env.OLLAMA_MODEL ?? "deepseek-v4-pro";
