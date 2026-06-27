@@ -266,10 +266,24 @@ async function cmdUpdate(args) {
   await showTree();
   step("Updating Iva…");
   const before = gitHead();
-  const pull = cap("git", ["pull", "--ff-only"]);
-  console.log([pull.out, pull.err].filter(Boolean).join("\n"));
-  if (pull.code !== 0) {
-    bad("git pull failed — resolve manually (git status), then retry");
+  const branch = cap("git", ["rev-parse", "--abbrev-ref", "HEAD"]).out || "main";
+  const fetchRes = cap("git", ["fetch", "--prune", "origin", branch]);
+  console.log([fetchRes.out, fetchRes.err].filter(Boolean).join("\n"));
+  if (fetchRes.code !== 0) {
+    bad("git fetch failed — check the network/remote, then retry");
+    process.exit(1);
+  }
+  // Fast-forward when possible; on a rewritten upstream (force-push) the branches
+  // diverge and ff is impossible — hard-reset to the remote instead of failing.
+  // Untracked files (.env, vault, …) are preserved by reset --hard.
+  let upd = cap("git", ["merge", "--ff-only", `origin/${branch}`]);
+  if (upd.code !== 0) {
+    warn("Upstream history was rewritten — resetting to origin/" + branch);
+    upd = cap("git", ["reset", "--hard", `origin/${branch}`]);
+  }
+  console.log([upd.out, upd.err].filter(Boolean).join("\n"));
+  if (upd.code !== 0) {
+    bad("git update failed — resolve manually (git status), then retry");
     process.exit(1);
   }
   const after = gitHead();

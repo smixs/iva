@@ -305,7 +305,16 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/package.json" ] && grep -q '"eve"' 
 elif [ -d "$INSTALL_DIR/.git" ]; then
   PROJECT_DIR="$INSTALL_DIR"
   step "$(t "Updating $PROJECT_DIR…" "Обновляю $PROJECT_DIR…")"
-  git -C "$PROJECT_DIR" pull --ff-only origin "$BRANCH"
+  git -C "$PROJECT_DIR" fetch --prune origin "$BRANCH"
+  # Fast-forward when possible; on a rewritten upstream (force-push) the branches
+  # diverge and ff is impossible — hard-reset to the remote instead of aborting.
+  # Untracked files (.env, vault, …) are preserved by reset --hard.
+  if git -C "$PROJECT_DIR" merge --ff-only "origin/$BRANCH" 2>/dev/null; then
+    :
+  else
+    warn "$(t "Upstream history was rewritten — resetting to origin/$BRANCH (local commits to tracked files are discarded)." "История на сервере переписана — сбрасываю на origin/$BRANCH (локальные правки отслеживаемых файлов будут потеряны).")"
+    git -C "$PROJECT_DIR" reset --hard "origin/$BRANCH"
+  fi
 else
   step "$(t "Cloning $REPO_URL → $INSTALL_DIR…" "Клонирую $REPO_URL → $INSTALL_DIR…")"
   git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
