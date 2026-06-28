@@ -5,6 +5,7 @@ import { join } from "node:path";
 // toTelegramHtmlChunks: markdown → массив готовых, сбалансированных HTML-чанков ≤limit
 // (гарантирует длину ПОСЛЕ конвертации). htmlToPlain: декодирующий plain-фолбэк.
 import { toTelegramHtmlChunks, htmlToPlain } from "../../scripts/lib/telegram-format.mjs";
+import { describeImage } from "../vision.js";
 
 // Токен (TELEGRAM_BOT_TOKEN) и секрет вебхука (TELEGRAM_WEBHOOK_SECRET_TOKEN)
 // читаются из окружения автоматически.
@@ -374,9 +375,26 @@ export default telegramChannel({
         // null = getFile без file_path (не too-big) либо скачивание !ok — общий диагностический фолбэк.
         if (!f) throw new Error("getFile/скачивание не удалось");
 
-        // Сохраняем оригинал ВСЕГДА (буквально всё + оригиналы), потом транскрипт где есть речь.
+        // Сохраняем оригинал ВСЕГДА (буквально всё + оригиналы).
         const stamp = localStamp();
         const rel = saveBlob(f.bytes, media.fileName, media.tag, media.mimeType, stamp);
+
+        // Неподвижное изображение → распознаём vision-моделью ТОГО ЖЕ провайдера (один ключ).
+        // Сбой/нет ключа → vision="", ход продолжается без зрения (graceful).
+        const isStillImage =
+          media.tag === "photo" ||
+          media.tag === "sticker" ||
+          (media.tag === "document" && (media.mimeType || "").startsWith("image/"));
+        let vision = "";
+        if (isStillImage) {
+          try {
+            vision = await describeImage(f.bytes, media.mimeType);
+          } catch (e) {
+            console.error("[telegram] vision упал, оставляю файл без описания:", e);
+          }
+        }
+
+        // Транскрипт — для аудио/видео (речь); с изображениями взаимоисключающе.
         let transcript = "";
         if (media.transcribe) {
           try {
@@ -385,22 +403,32 @@ export default telegramChannel({
             console.error("[telegram] Deepgram упал, оставляю только файл:", e);
           }
         }
-        appendDaily(tag, transcript ? `![[${rel}]]\n\n${transcript}${capSuffix}` : `![[${rel}]]${capSuffix}`);
 
-        // Немой стикер/анимация без подписи — сохранили в лог, без спама ответом.
-        if ((media.tag === "sticker" || media.tag === "animation") && !transcript && !caption) return null;
+        // Лог дня: embed + (описание картинки | транскрипт) + подпись.
+        const body = vision || transcript;
+        appendDaily(tag, body ? `![[${rel}]]\n\n${body}${capSuffix}` : `![[${rel}]]${capSuffix}`);
 
-        // Модели даём ПУТЬ к файлу, а не сам файл — смотрит/читает сама своими инструментами.
+        // Немой стикер/анимация без подписи и без распознанного содержимого — без ответа.
+        if (
+          (media.tag === "sticker" || media.tag === "animation") &&
+          !vision &&
+          !transcript &&
+          !caption
+        )
+          return null;
+
         const path = `${process.env.ASSISTANT_VAULT_DIR || "vault"}/${rel}`;
         const isImage = media.tag === "photo" || media.tag === "sticker" || media.tag === "animation";
-        const hint = transcript
-          ? `${tag} сохранено: ${path}`
-          : isImage
-            ? `${tag} пользователь прислал изображение: ${path}. Посмотри его (если умеешь анализировать ` +
-              `изображения — своими инструментами/скиллами) и ответь по содержимому; не можешь — так и скажи.`
-            : `${tag} пользователь прислал файл: ${path}. Открой/прочитай его (read_file, bash, скиллы ` +
-              `pdf/xlsx/docx) и ответь по содержимому.`;
-        const parts = [hint];
+        const lead = vision
+          ? `${tag} изображение (${path}). Что на нём: ${vision}`
+          : transcript
+            ? `${tag} сохранено: ${path}`
+            : isImage
+              ? `${tag} пользователь прислал изображение: ${path}. Посмотри его своими инструментами/` +
+                `скиллами и ответь по содержимому; не можешь — так и скажи.`
+              : `${tag} пользователь прислал файл: ${path}. Открой/прочитай его (read_file, bash, скиллы ` +
+                `pdf/xlsx/docx) и ответь по содержимому.`;
+        const parts = [lead];
         if (transcript) parts.push(`${tag} ${transcript}`);
         if (caption) parts.push(caption);
         return { auth: buildAuth(message), context: parts };
