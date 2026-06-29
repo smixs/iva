@@ -1,6 +1,7 @@
 import { defineAgent } from "eve";
 import { z } from "zod";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { withReasoningStripped } from "../../provider.js";
 
 const ollama = createOpenAICompatible({
   name: "ollama-cloud",
@@ -16,7 +17,7 @@ export default defineAgent({
   description:
     "Разбивает крупную цель пользователя на конкретные выполнимые шаги. " +
     "Делегируй сюда, когда задача большая и её нужно декомпозировать на план.",
-  model: ollama(MODEL),
+  model: withReasoningStripped(ollama(MODEL)),
   modelContextWindowTokens: CONTEXT_WINDOW,
   // Task-mode: при делегировании возвращает структурированный план.
   outputSchema: z.object({

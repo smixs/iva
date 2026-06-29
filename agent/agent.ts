@@ -2,7 +2,7 @@ import { defineAgent } from "eve";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 // Провайдер (Ollama Cloud / OpenCode Zen) и его модели — единый источник в provider.ts,
 // тот же конфиг переиспользует agent/vision.ts (vision-модель того же провайдера).
-import { providerConfig as cfg, providerName } from "./provider.js";
+import { providerConfig as cfg, providerName, withReasoningStripped } from "./provider.js";
 
 const provider = createOpenAICompatible({
   name: `iva-${providerName}`,
@@ -15,7 +15,7 @@ const provider = createOpenAICompatible({
 });
 
 export default defineAgent({
-  model: provider(cfg.textModel),
+  model: withReasoningStripped(provider(cfg.textModel)),
   // Кастомный провайдер не отдаёт метаданные окна через AI Gateway — задаём вручную.
   // ВАЖНО: значение ОБЯЗАНО быть ≤ реального окна модели, иначе запрос переполнит окно до компактации.
   modelContextWindowTokens: cfg.contextWindow,
