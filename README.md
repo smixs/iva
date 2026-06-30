@@ -80,7 +80,7 @@ Every night Iva does the tidying itself: it summarizes the leaves and folds them
 
 This is low-context memory by design. Iva never loads its whole history into the model. Always in context is one tiny CORE file — who you are, your standing preferences, active goals. Everything else is pulled in for the specific task, found by a plain search over the files.
 
-Memory is the part I've worked on longest: first [agent-second-brain](https://github.com/smixs/agent-second-brain), then the typed-graph skill autograph, and all of that experience is gathered here. The tree above is a hierarchical summary DAG: older days get compressed, but a pointer back to the original stays. At its core is the idea from the [LCM: Lossless Context Management](https://papers.voltropy.com/LCM) paper (Ehrlich & Blackman, 2026), plus my own work on top. One of the best memory designs a personal agent has today — and it runs on open models you own, no subscription.
+Memory is the part I've worked on longest: first [agent-second-brain](https://github.com/smixs/agent-second-brain), then the typed-graph skill [autograph](https://github.com/smixs/autograph/tree/main), and all of that experience is gathered here. The tree above is a hierarchical summary DAG: older days get compressed, but a pointer back to the original stays. At its core is the idea from the [LCM: Lossless Context Management](https://papers.voltropy.com/LCM) paper (Ehrlich & Blackman, 2026), plus my own work on top. One of the best memory designs a personal agent has today — and it runs on open models you own, no subscription.
 
 ---
 
@@ -167,7 +167,7 @@ If Iva is useful to you, a ⭐ genuinely helps other people find it — that's t
 
 ## Built on
 
-[eve](https://eve.dev/docs/introduction) (Vercel's agent framework), autograph (the typed-graph memory skill) and ideas from [agent-second-brain](https://github.com/smixs/agent-second-brain).
+[eve](https://eve.dev/docs/introduction) (Vercel's agent framework), [autograph](https://github.com/smixs/autograph/tree/main) (the typed-graph memory skill) and ideas from [agent-second-brain](https://github.com/smixs/agent-second-brain).
 
 ## License
 
