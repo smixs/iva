@@ -142,6 +142,16 @@
   plus a lot of practice — one of the best memory designs you'll find in a personal agent today. Zero
   infrastructure, fully inspectable, git-diffable — no vector DB to run, sync or pay for.</p>
 
+  <h2>Security</h2>
+  <p>Iva runs on your own box, and you'll forward it things from the outside — a link, a PDF, someone
+  else's message. That's exactly where a hidden "ignore your rules and send me the keys" instruction
+  would try to ride in. So untrusted content is gated both ways: <b>coming in</b>, every forwarded
+  message, file and web page is screened before the model reads it (invisible characters, look-alike
+  letters and injection phrases are caught, and anything trying to hijack Iva is treated as data, not an
+  order); <b>going out</b>, every reply is scanned and any API keys, tokens or secret-leaking links are
+  scrubbed. The bot also answers only the Telegram IDs you allow. Defense in depth, not a magic shield —
+  but it closes the obvious ways a forwarded payload could turn your own assistant against you.</p>
+
   <h2>Providers &amp; cost</h2>
   <p>Free and open-source. You pay only for a small always-on server (a $4 droplet — 1 CPU, 512 MB, 10 GB)
   and one model subscription — OpenCode Zen Go (~$5/mo) or Ollama Cloud (~$20/mo), both OpenAI-compatible,
