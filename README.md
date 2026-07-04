@@ -21,25 +21,19 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ## What it is
 
-Iva is a minimal personal AI agent with long-term memory, built on [eve](https://eve.dev/docs/introduction), the agent framework from Vercel. It lives in Telegram and runs on your own server. One command installs it, and there's almost nothing to set up — it's all been chosen for you.
+Iva is a personal assistant that lives in your Telegram and remembers everything. Send it a voice note, a file, a forwarded post — it reads them, pulls out the facts (people, projects, decisions) and files them on its own. Ask it anything later and it finds the answer by meaning, not just the exact word. Built on [eve](https://eve.dev/docs/introduction), Vercel's agent framework.
 
-The main thing here is memory. Iva breaks every conversation down into facts — about you, the people around you, your projects and decisions — and files them into a tree that it tidies up on its own every night. The longer you use it, the better it knows you.
+Its memory has layers. The word-for-word transcript of each day, summaries folded up into weeks, months and a year, and fact cards on the people and projects that matter — reorganized every night while you sleep. When something changes — you switch jobs, a decision is reverted — it rewrites the current truth and keeps the old version dated, so it never drowns in its own contradictions.
 
-And it's cheap. The minimum is one core, 512 MB of memory, 10 GB of disk: a $4 DigitalOcean droplet plus a model through OpenCode Go for $5. About $9 a month for an agent that sends you a morning digest and reminds you about meetings. The code and the memory are yours; you pick the key and the model. Fully open source.
+And it's yours. Everything runs on your own cheap server — about $9 a month — with your keys and your data. Anything you forward is screened for hidden prompt-injection before the model reads it, and secrets never leak out of a reply. One command installs it; fully open source, almost nothing to set up.
 
 ---
 
 ## Why another agent
 
-[OpenClaw](https://github.com/openclaw/openclaw), [Hermes](https://github.com/NousResearch/hermes-agent), [nanobot](https://github.com/HKUDS/nanobot) — there's already a choice, and a decent one. The problem is that each of them dumps the same pile of decisions on you: which model, which memory, which search, how to deploy, how to wire it all together. Too many options — that's the real pain.
+Every agent out there dumps the same pile of decisions on you: which model, which memory, which search, how to deploy, how to wire it together. Too many options is the real pain.
 
-So I made the choice myself. I'm always testing agents, models, stacks and harnesses, keeping what actually works, and folding it into Iva — so you don't have to dig through it yourself. The goal is simple: a cheap, fast, reliable agent for every day, one that sends you a morning digest on its own.
-
-- **The best of different agents in one place.** I've been at this a long time — I pick out the good ideas and assemble them with simple defaults.
-- **Open to extend.** Open code on open models — DeepSeek, Kimi, GLM are genuinely strong now, and you switch on the fly.
-- **One command, and it works.** Telegram for chat, Deepgram for voice, tree-shaped memory, nightly summaries — already assembled and configured. Something like the Linux Mint of AI agents.
-
-There are plenty of agents around. This one's mine. Now it's yours too.
+So I made the choices. I test agents, models and stacks constantly, keep what actually works, and fold it into Iva with simple defaults — open code on open models (DeepSeek, Kimi, GLM), switchable on the fly. Something like the Linux Mint of AI agents. This one's mine. Now it's yours too.
 
 ---
 
@@ -50,13 +44,12 @@ There are plenty of agents around. This one's mine. Now it's yours too.
 | 🎙️ **Voice & video** | Transcribes voice notes and video messages in any language (Deepgram nova-3). |
 | 🧠 **Long memory** | Remembers your conversations, tidies them at night, and rewrites facts that change instead of piling up contradictions. |
 | 🔎 **Smart search** | Ranks memory by relevance and by links between cards — finds things by meaning, not the exact word, in any language. |
+| 🛡️ **Safe by default** | Forwarded messages, files and web pages are screened for prompt-injection; API keys and secrets are scrubbed from replies before they go out. |
 | ⏰ **On a schedule** | Day or week digests, recurring jobs; it can check your inbox and send you a summary. |
 | 🔔 **Reminders** | Tell it what and when — it won't forget. |
 | 🤖 **Your choice of model** | DeepSeek, Kimi, GLM and other open models — switch any time. |
 | 🌐 **And a bit more** | Searches the web (free Tavily/Exa key), opens pages, drives a browser, connects to MCP. |
 | 🎭 **A character** | Change its tone and rules right in the chat — it rewrites itself. |
-
-Everything the best agents have — voice, search, skills, MCP — is here too. The difference is what's under Iva's hood.
 
 ---
 
