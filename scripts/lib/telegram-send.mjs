@@ -12,6 +12,7 @@
 // htmlToPlain (HTML→plain с декодом сущностей) живёт в общем модуле — тот же
 // фолбэк-декодер использует и Telegram-канал (agent/channels/telegram.ts).
 import { toTelegramHtmlChunks, htmlToPlain } from "./telegram-format.mjs";
+import { scanOutbound } from "../../agent/lib/security-gate.ts";
 
 async function post(bot, body) {
   const res = await fetch(`https://api.telegram.org/bot${bot}/sendMessage`, {
@@ -24,6 +25,12 @@ async function post(bot, body) {
 
 export async function sendTelegramHtml(bot, chat, md, { caption = false } = {}) {
   let fellBack = false;
+  // Outbound security-гейт: редактим утёкшие секреты и в ночных отчётах (fail-open + лог).
+  const guard = scanOutbound(md);
+  if (!guard.clean) {
+    console.error("[security] outbound report leak redacted:", guard.findings.map((f) => `${f.type}:${f.name}`).join(", "));
+  }
+  md = guard.text;
   try {
     for (const chunk of toTelegramHtmlChunks(md, caption ? 1024 : 4096)) {
       const r = await post(bot, { chat_id: chat, text: chunk, parse_mode: "HTML" });

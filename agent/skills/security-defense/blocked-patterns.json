@@ -1,0 +1,1547 @@
+{
+  "description": "Blocked command patterns - these are NEVER allowed (leak secrets, DoS, etc.)",
+  "version": "1.0.0",
+  "lastUpdated": "2026-02-02",
+  "patterns": [
+    {
+      "id": "env-direct-1",
+      "category": "env_leak",
+      "pattern": "\\benv\\b(?!\\s*=)",
+      "reason": "BLOCKED: Leaks all environment variables including API keys"
+    },
+    {
+      "id": "env-direct-2",
+      "category": "env_leak",
+      "pattern": "\\bprintenv\\b",
+      "reason": "BLOCKED: Leaks environment variables"
+    },
+    {
+      "id": "env-direct-3",
+      "category": "env_leak",
+      "pattern": "\\bset\\s*$",
+      "reason": "BLOCKED: Leaks shell variables and environment"
+    },
+    {
+      "id": "env-direct-4",
+      "category": "env_leak",
+      "pattern": "\\bexport\\s*$",
+      "reason": "BLOCKED: Lists all exported variables"
+    },
+    {
+      "id": "env-direct-5",
+      "category": "env_leak",
+      "pattern": "\\bexport\\s+-p\\b",
+      "reason": "BLOCKED: Lists all exported variables"
+    },
+    {
+      "id": "env-direct-6",
+      "category": "env_leak",
+      "pattern": "\\bdeclare\\s+-x\\b",
+      "reason": "BLOCKED: Lists exported variables"
+    },
+    {
+      "id": "env-direct-7",
+      "category": "env_leak",
+      "pattern": "\\bcompgen\\s+-v\\b",
+      "reason": "BLOCKED: Lists all variables"
+    },
+    {
+      "id": "proc-environ-1",
+      "category": "env_leak",
+      "pattern": "\\/proc\\/\\d+\\/environ",
+      "reason": "BLOCKED: Reads process environment"
+    },
+    {
+      "id": "proc-environ-2",
+      "category": "env_leak",
+      "pattern": "\\/proc\\/self\\/environ",
+      "reason": "BLOCKED: Reads own environment"
+    },
+    {
+      "id": "var-access-1",
+      "category": "env_leak",
+      "pattern": "\\$\\{?\\w*[Kk][Ee][Yy]\\w*\\}?",
+      "reason": "BLOCKED: Attempted key variable access"
+    },
+    {
+      "id": "var-access-2",
+      "category": "env_leak",
+      "pattern": "\\$\\{?[A-Z_]*TOKEN[A-Z_]*\\}?",
+      "reason": "BLOCKED: Attempted token variable access"
+    },
+    {
+      "id": "var-access-3",
+      "category": "env_leak",
+      "pattern": "\\$\\{?[A-Z_]*SECRET[A-Z_]*\\}?",
+      "reason": "BLOCKED: Attempted secret variable access"
+    },
+    {
+      "id": "echo-secret",
+      "category": "env_leak",
+      "pattern": "\\becho\\s+\\$[A-Z_]*(KEY|TOKEN|SECRET|PASSWORD|PASS|API|CREDENTIAL)[A-Z_]*",
+      "flags": "i",
+      "reason": "BLOCKED: Attempted to print secret"
+    },
+    {
+      "id": "docker-secrets-1",
+      "category": "docker_secrets",
+      "pattern": "\\/run\\/secrets",
+      "reason": "BLOCKED: Cannot access Docker Secrets"
+    },
+    {
+      "id": "docker-secrets-2",
+      "category": "docker_secrets",
+      "pattern": "\\/var\\/run\\/secrets",
+      "reason": "BLOCKED: Cannot access secrets"
+    },
+    {
+      "id": "base64-exfil-1",
+      "category": "exfiltration",
+      "pattern": "base64\\s+[^|<>\\s]",
+      "reason": "BLOCKED: base64 file encoding (exfiltration)"
+    },
+    {
+      "id": "openssl-exfil",
+      "category": "exfiltration",
+      "pattern": "openssl\\s+enc",
+      "reason": "BLOCKED: openssl encoding (exfiltration)"
+    },
+    {
+      "id": "xxd-exfil",
+      "category": "exfiltration",
+      "pattern": "xxd\\s+[^|<>\\s]",
+      "reason": "BLOCKED: hex dump file"
+    },
+    {
+      "id": "python-run-1",
+      "category": "code_env_access",
+      "pattern": "python.*open\\s*\\(\\s*['\"]\\\/run",
+      "reason": "BLOCKED: Python reading /run"
+    },
+    {
+      "id": "python-run-2",
+      "category": "code_env_access",
+      "pattern": "python.*open\\s*\\(\\s*['\"]\\\/etc",
+      "reason": "BLOCKED: Python reading /etc"
+    },
+    {
+      "id": "python-path-run",
+      "category": "code_env_access",
+      "pattern": "python.*Path\\s*\\(\\s*['\"]\\\/run",
+      "reason": "BLOCKED: Python Path /run"
+    },
+    {
+      "id": "cat-env",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Reading .env file with secrets"
+    },
+    {
+      "id": "less-env",
+      "category": "sensitive_files",
+      "pattern": "\\bless\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Reading .env file"
+    },
+    {
+      "id": "more-env",
+      "category": "sensitive_files",
+      "pattern": "\\bmore\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Reading .env file"
+    },
+    {
+      "id": "head-env",
+      "category": "sensitive_files",
+      "pattern": "\\bhead\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Reading .env file"
+    },
+    {
+      "id": "tail-env",
+      "category": "sensitive_files",
+      "pattern": "\\btail\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Reading .env file"
+    },
+    {
+      "id": "grep-env",
+      "category": "sensitive_files",
+      "pattern": "\\bgrep\\s+.*\\.env\\b",
+      "reason": "BLOCKED: Searching in .env file"
+    },
+    {
+      "id": "cat-credentials",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*credentials",
+      "reason": "BLOCKED: Reading credentials file"
+    },
+    {
+      "id": "cat-secret",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*secret",
+      "reason": "BLOCKED: Reading secrets file"
+    },
+    {
+      "id": "cat-ssh",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+~?\\/?\\.\\/ssh\\/",
+      "reason": "BLOCKED: Reading SSH keys"
+    },
+    {
+      "id": "cat-idrsa",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*id_rsa",
+      "reason": "BLOCKED: Reading SSH private key"
+    },
+    {
+      "id": "cat-pem",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*\\.pem\\b",
+      "reason": "BLOCKED: Reading certificate/key"
+    },
+    {
+      "id": "cat-key",
+      "category": "sensitive_files",
+      "pattern": "\\bcat\\s+.*\\.key\\b",
+      "reason": "BLOCKED: Reading key file"
+    },
+    {
+      "id": "curl-exfil-1",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*-d\\s*[\"']?\\$",
+      "reason": "BLOCKED: Sending env var via curl"
+    },
+    {
+      "id": "wget-exfil",
+      "category": "exfiltration",
+      "pattern": "\\bwget\\s+.*\\$[A-Z]",
+      "reason": "BLOCKED: URL contains env variable"
+    },
+    {
+      "id": "nc-exfil",
+      "category": "exfiltration",
+      "pattern": "\\bnc\\s+.*<<<",
+      "reason": "BLOCKED: Sending data via netcat"
+    },
+    {
+      "id": "nmap",
+      "category": "network_scan",
+      "pattern": "\\bnmap\\b",
+      "reason": "BLOCKED: Network scanning not allowed"
+    },
+    {
+      "id": "masscan",
+      "category": "network_scan",
+      "pattern": "\\bmasscan\\b",
+      "reason": "BLOCKED: Network scanning not allowed"
+    },
+    {
+      "id": "zmap",
+      "category": "network_scan",
+      "pattern": "\\bzmap\\b",
+      "reason": "BLOCKED: Network scanning not allowed"
+    },
+    {
+      "id": "dos-yes-pipe",
+      "category": "dos",
+      "pattern": "\\byes\\s*\\|",
+      "reason": "BLOCKED: Infinite output pipe"
+    },
+    {
+      "id": "dos-yes",
+      "category": "dos",
+      "pattern": "\\byes\\s*$",
+      "reason": "BLOCKED: Infinite output command"
+    },
+    {
+      "id": "dos-devzero",
+      "category": "dos",
+      "pattern": "\\/dev\\/zero",
+      "reason": "BLOCKED: Infinite zero stream"
+    },
+    {
+      "id": "dos-urandom-dd",
+      "category": "dos",
+      "pattern": "\\/dev\\/urandom.*dd",
+      "reason": "BLOCKED: Large random data generation"
+    },
+    {
+      "id": "dos-head-huge",
+      "category": "dos",
+      "pattern": "head\\s+-c\\s*[0-9]{10,}",
+      "reason": "BLOCKED: Extremely large data read"
+    },
+    {
+      "id": "dos-dd-huge",
+      "category": "dos",
+      "pattern": "dd\\s+.*count=[0-9]{7,}",
+      "reason": "BLOCKED: Extremely large dd operation"
+    },
+    {
+      "id": "dos-fallocate",
+      "category": "dos",
+      "pattern": "fallocate\\s+-l\\s*[0-9]+[GT]",
+      "flags": "i",
+      "reason": "BLOCKED: Creating huge file"
+    },
+    {
+      "id": "dos-truncate",
+      "category": "dos",
+      "pattern": "truncate\\s+-s\\s*[0-9]+[GT]",
+      "flags": "i",
+      "reason": "BLOCKED: Creating huge file"
+    },
+    {
+      "id": "python-factorial",
+      "category": "dos",
+      "pattern": "python.*factorial\\s*\\(\\s*[0-9]{6,}\\s*\\)",
+      "reason": "BLOCKED: Huge factorial computation"
+    },
+    {
+      "id": "python-while-true",
+      "category": "dos",
+      "pattern": "python.*-c.*while\\s*(True|1)",
+      "reason": "BLOCKED: Infinite Python loop"
+    },
+    {
+      "id": "python-huge-power-1",
+      "category": "dos",
+      "pattern": "python.*10\\s*\\*\\*\\s*[0-9]{8,}",
+      "reason": "BLOCKED: Huge number computation"
+    },
+    {
+      "id": "python-huge-power-2",
+      "category": "dos",
+      "pattern": "python.*\\*\\*\\s*[0-9]{7,}",
+      "reason": "BLOCKED: Huge exponentiation"
+    },
+    {
+      "id": "fib-naive-1",
+      "category": "dos",
+      "pattern": "fib\\s*\\(\\s*[4-9][0-9]\\s*\\)",
+      "flags": "i",
+      "reason": "BLOCKED: Naive fib(40+) is exponential O(2^n), use iterative"
+    },
+    {
+      "id": "fib-naive-2",
+      "category": "dos",
+      "pattern": "fibonacci\\s*\\(\\s*[4-9][0-9]\\s*\\)",
+      "flags": "i",
+      "reason": "BLOCKED: Naive fib(40+) is exponential"
+    },
+    {
+      "id": "sympy-expand",
+      "category": "dos",
+      "pattern": "expand\\s*\\([^)]*\\*\\*\\s*[0-9]{4,}",
+      "flags": "i",
+      "reason": "BLOCKED: Symbolic expansion with huge power (memory bomb)"
+    },
+    {
+      "id": "sympy-power",
+      "category": "dos",
+      "pattern": "sympy.*\\*\\*\\s*[0-9]{4,}",
+      "flags": "i",
+      "reason": "BLOCKED: Sympy with huge exponent"
+    },
+    {
+      "id": "sp-expand",
+      "category": "dos",
+      "pattern": "sp\\.expand.*\\*\\*\\s*[0-9]{3,}",
+      "flags": "i",
+      "reason": "BLOCKED: sp.expand with large power"
+    },
+    {
+      "id": "seq-huge",
+      "category": "dos",
+      "pattern": "seq\\s+[0-9]{10,}",
+      "reason": "BLOCKED: Huge sequence generation"
+    },
+    {
+      "id": "brace-huge",
+      "category": "dos",
+      "pattern": "\\{1\\.\\.[0-9]{8,}\\}",
+      "reason": "BLOCKED: Huge brace expansion"
+    },
+    {
+      "id": "fork-bomb-1",
+      "category": "dos",
+      "pattern": "\\(\\s*\\)\\s*\\{\\s*\\|",
+      "reason": "BLOCKED: Potential fork bomb"
+    },
+    {
+      "id": "fork-bomb-2",
+      "category": "dos",
+      "pattern": "&\\s*&\\s*.*&\\s*&",
+      "reason": "BLOCKED: Multiple background forks"
+    },
+    {
+      "id": "fork-bomb-3",
+      "category": "dos",
+      "pattern": "for.*do.*&.*done",
+      "flags": "i",
+      "reason": "BLOCKED: Loop spawning background processes"
+    },
+    {
+      "id": "fork-bomb-4",
+      "category": "dos",
+      "pattern": "while.*do.*&.*done",
+      "flags": "i",
+      "reason": "BLOCKED: Loop spawning background processes"
+    },
+    {
+      "id": "sleep-long",
+      "category": "dos",
+      "pattern": "sleep\\s+[0-9]{4,}",
+      "reason": "BLOCKED: Very long sleep (resource hog)"
+    },
+    {
+      "id": "background-many",
+      "category": "dos",
+      "pattern": "(\\s*&\\s*){3,}",
+      "reason": "BLOCKED: Too many background processes"
+    },
+    {
+      "id": "crypto-xmrig",
+      "category": "crypto_mining",
+      "pattern": "\\bxmrig\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Crypto miner"
+    },
+    {
+      "id": "crypto-cpuminer",
+      "category": "crypto_mining",
+      "pattern": "\\bcpuminer\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Crypto miner"
+    },
+    {
+      "id": "crypto-minerd",
+      "category": "crypto_mining",
+      "pattern": "\\bminerd\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Crypto miner"
+    },
+    {
+      "id": "crypto-stratum",
+      "category": "crypto_mining",
+      "pattern": "stratum\\+tcp:\\/\\/",
+      "flags": "i",
+      "reason": "BLOCKED: Mining pool connection"
+    },
+    {
+      "id": "history-1",
+      "category": "privacy",
+      "pattern": "\\bhistory\\b",
+      "reason": "BLOCKED: Reading command history"
+    },
+    {
+      "id": "history-2",
+      "category": "privacy",
+      "pattern": "\\.bash_history",
+      "reason": "BLOCKED: Reading bash history"
+    },
+    {
+      "id": "history-3",
+      "category": "privacy",
+      "pattern": "\\.zsh_history",
+      "reason": "BLOCKED: Reading zsh history"
+    },
+    {
+      "id": "python-env-1",
+      "category": "code_env_access",
+      "pattern": "os\\.environ",
+      "reason": "BLOCKED: Python env access"
+    },
+    {
+      "id": "python-env-2",
+      "category": "code_env_access",
+      "pattern": "os\\.getenv",
+      "reason": "BLOCKED: Python env access"
+    },
+    {
+      "id": "python-subprocess-env",
+      "category": "code_env_access",
+      "pattern": "subprocess.*env",
+      "reason": "BLOCKED: Subprocess with env"
+    },
+    {
+      "id": "dotenv-1",
+      "category": "code_env_access",
+      "pattern": "dotenv",
+      "reason": "BLOCKED: dotenv library (reads .env)"
+    },
+    {
+      "id": "dotenv-2",
+      "category": "code_env_access",
+      "pattern": "load_dotenv",
+      "reason": "BLOCKED: Loading .env file"
+    },
+    {
+      "id": "python-import-environ",
+      "category": "code_env_access",
+      "pattern": "from\\s+os\\s+import\\s+environ",
+      "reason": "BLOCKED: Importing environ"
+    },
+    {
+      "id": "node-env",
+      "category": "code_env_access",
+      "pattern": "process\\.env",
+      "reason": "BLOCKED: Node.js env access"
+    },
+    {
+      "id": "node-dotenv",
+      "category": "code_env_access",
+      "pattern": "require\\s*\\(\\s*['\"]dotenv['\"]",
+      "reason": "BLOCKED: dotenv require"
+    },
+    {
+      "id": "npx-test-json",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*test.*json",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx package (env dump)"
+    },
+    {
+      "id": "npx-env",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*env",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx package (env dump)"
+    },
+    {
+      "id": "npx-dump",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*dump",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx dump package"
+    },
+    {
+      "id": "npx-leak",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*leak",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx package"
+    },
+    {
+      "id": "npx-secret",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*secret",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx package"
+    },
+    {
+      "id": "npx-config",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*config",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx config package"
+    },
+    {
+      "id": "npx-diag",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*diag",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx diagnostics package"
+    },
+    {
+      "id": "npx-debug",
+      "category": "npx_malicious",
+      "pattern": "npx\\s+.*debug",
+      "flags": "i",
+      "reason": "BLOCKED: Suspicious npx debug package"
+    },
+    {
+      "id": "npm-run-env",
+      "category": "npx_malicious",
+      "pattern": "npm\\s+run\\s+.*env",
+      "flags": "i",
+      "reason": "BLOCKED: npm script that may leak env"
+    },
+    {
+      "id": "node-e-json",
+      "category": "npx_malicious",
+      "pattern": "node\\s+-e\\s+.*JSON\\.stringify.*process",
+      "flags": "i",
+      "reason": "BLOCKED: Node one-liner env dump"
+    },
+    {
+      "id": "node-p-process",
+      "category": "npx_malicious",
+      "pattern": "node\\s+-p\\s+.*process",
+      "flags": "i",
+      "reason": "BLOCKED: Node print process info"
+    },
+    {
+      "id": "node-print-process",
+      "category": "npx_malicious",
+      "pattern": "node\\s+--print.*process",
+      "flags": "i",
+      "reason": "BLOCKED: Node print process info"
+    },
+    {
+      "id": "shell-var-expansion",
+      "category": "env_leak",
+      "pattern": "\\$\\{.*\\}",
+      "reason": "BLOCKED: Shell variable expansion"
+    },
+    {
+      "id": "env-var-ref",
+      "category": "env_leak",
+      "pattern": "\\$[A-Z_]+",
+      "reason": "BLOCKED: Environment variable reference"
+    },
+    {
+      "id": "base64-pipe-1",
+      "category": "exfiltration",
+      "pattern": "base64\\s+(--decode|-d)?\\s*[<|]",
+      "reason": "BLOCKED: base64 with piped input"
+    },
+    {
+      "id": "base64-pipe-2",
+      "category": "exfiltration",
+      "pattern": "\\|\\s*base64",
+      "reason": "BLOCKED: Piping to base64 (exfiltration)"
+    },
+    {
+      "id": "xxd-tool",
+      "category": "exfiltration",
+      "pattern": "\\bxxd\\b",
+      "reason": "BLOCKED: Hex dump tool"
+    },
+    {
+      "id": "hexdump-tool",
+      "category": "exfiltration",
+      "pattern": "\\bhexdump\\b",
+      "reason": "BLOCKED: Hex dump tool"
+    },
+    {
+      "id": "od-tool",
+      "category": "exfiltration",
+      "pattern": "\\bod\\s+-",
+      "reason": "BLOCKED: Octal dump"
+    },
+    {
+      "id": "curl-post-1",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*(-d|--data|--data-raw|--data-binary)\\s",
+      "reason": "BLOCKED: curl with POST data (potential exfiltration)"
+    },
+    {
+      "id": "curl-form",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*-F\\s",
+      "reason": "BLOCKED: curl with form upload"
+    },
+    {
+      "id": "curl-upload-1",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*-T\\s",
+      "reason": "BLOCKED: curl with file upload"
+    },
+    {
+      "id": "curl-upload-2",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*--upload-file",
+      "reason": "BLOCKED: curl with file upload"
+    },
+    {
+      "id": "curl-post-2",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*-X\\s*POST",
+      "reason": "BLOCKED: curl POST request"
+    },
+    {
+      "id": "curl-put",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*-X\\s*PUT",
+      "reason": "BLOCKED: curl PUT request"
+    },
+    {
+      "id": "wget-post-1",
+      "category": "exfiltration",
+      "pattern": "\\bwget\\s+.*--post-data",
+      "reason": "BLOCKED: wget with POST data"
+    },
+    {
+      "id": "wget-post-2",
+      "category": "exfiltration",
+      "pattern": "\\bwget\\s+.*--post-file",
+      "reason": "BLOCKED: wget with file upload"
+    },
+    {
+      "id": "dns-exfil-1",
+      "category": "exfiltration",
+      "pattern": "\\bnslookup\\s+.*\\$",
+      "reason": "BLOCKED: DNS query with variable (exfiltration)"
+    },
+    {
+      "id": "dns-exfil-2",
+      "category": "exfiltration",
+      "pattern": "\\bdig\\s+.*\\$",
+      "reason": "BLOCKED: DNS query with variable (exfiltration)"
+    },
+    {
+      "id": "dns-exfil-3",
+      "category": "exfiltration",
+      "pattern": "\\bhost\\s+.*\\$",
+      "reason": "BLOCKED: DNS query with variable (exfiltration)"
+    },
+    {
+      "id": "dns-exfil-4",
+      "category": "exfiltration",
+      "pattern": "\\$\\(.*\\)\\..*\\.(com|net|org|io)",
+      "reason": "BLOCKED: Command substitution in domain (DNS exfiltration)"
+    },
+    {
+      "id": "symlink-1",
+      "category": "escape",
+      "pattern": "\\bln\\s+-s\\s+\\/",
+      "reason": "BLOCKED: Symlink to absolute path (potential escape)"
+    },
+    {
+      "id": "symlink-etc",
+      "category": "escape",
+      "pattern": "\\bln\\s+.*-s.*\\/etc",
+      "reason": "BLOCKED: Symlink to /etc"
+    },
+    {
+      "id": "symlink-root",
+      "category": "escape",
+      "pattern": "\\bln\\s+.*-s.*\\/root",
+      "reason": "BLOCKED: Symlink to /root"
+    },
+    {
+      "id": "symlink-home",
+      "category": "escape",
+      "pattern": "\\bln\\s+.*-s.*\\/home",
+      "reason": "BLOCKED: Symlink to /home"
+    },
+    {
+      "id": "symlink-proc",
+      "category": "escape",
+      "pattern": "\\bln\\s+.*-s.*\\/proc",
+      "reason": "BLOCKED: Symlink to /proc"
+    },
+    {
+      "id": "cloud-metadata-1",
+      "category": "cloud",
+      "pattern": "169\\.254\\.169\\.254",
+      "reason": "BLOCKED: Cloud metadata endpoint"
+    },
+    {
+      "id": "cloud-metadata-2",
+      "category": "cloud",
+      "pattern": "metadata\\.google\\.internal",
+      "reason": "BLOCKED: GCP metadata endpoint"
+    },
+    {
+      "id": "internal-proxy-1",
+      "category": "internal_services",
+      "pattern": "curl.*proxy:",
+      "reason": "BLOCKED: Access to internal proxy service"
+    },
+    {
+      "id": "internal-proxy-2",
+      "category": "internal_services",
+      "pattern": "wget.*proxy:",
+      "reason": "BLOCKED: Access to internal proxy service"
+    },
+    {
+      "id": "internal-proxy-3",
+      "category": "internal_services",
+      "pattern": "http:\\/\\/proxy[:\\s\\/]",
+      "reason": "BLOCKED: Access to internal proxy"
+    },
+    {
+      "id": "docker-socket",
+      "category": "escape",
+      "pattern": "\\/var\\/run\\/docker\\.sock",
+      "reason": "BLOCKED: Docker socket access"
+    },
+    {
+      "id": "docker-privileged",
+      "category": "escape",
+      "pattern": "docker\\s+run\\s+.*--privileged",
+      "reason": "BLOCKED: Privileged container"
+    },
+    {
+      "id": "docker-mount-root",
+      "category": "escape",
+      "pattern": "docker\\s+run\\s+.*-v\\s+\\/",
+      "reason": "BLOCKED: Mount host root in container"
+    },
+    {
+      "id": "webhook-ngrok",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*ngrok\\.io",
+      "reason": "BLOCKED: Request to ngrok (exfiltration tunnel)"
+    },
+    {
+      "id": "webhook-site",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*webhook\\.site",
+      "reason": "BLOCKED: Request to webhook.site"
+    },
+    {
+      "id": "webhook-requestbin",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*requestbin",
+      "reason": "BLOCKED: Request to requestbin"
+    },
+    {
+      "id": "webhook-pipedream",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*pipedream",
+      "reason": "BLOCKED: Request to pipedream"
+    },
+    {
+      "id": "webhook-burp",
+      "category": "exfiltration",
+      "pattern": "\\bcurl\\s+.*burpcollaborator",
+      "reason": "BLOCKED: Request to burp collaborator"
+    },
+    {
+      "id": "kill-system-1",
+      "category": "process_kill",
+      "pattern": "\\bkillall\\s+(node|npm|npx|tsx|python|bash|sh)\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Cannot kill system/bot processes"
+    },
+    {
+      "id": "kill-system-2",
+      "category": "process_kill",
+      "pattern": "\\bpkill\\s+(-\\w+\\s+)*(node|npm|npx|tsx|python|bash|sh)\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Cannot kill system/bot processes"
+    },
+    {
+      "id": "kill-low-pid",
+      "category": "process_kill",
+      "pattern": "\\bkill\\s+(-\\d+\\s+)*(1|2|3|4|5|6|7|8|9|10)\\b",
+      "reason": "BLOCKED: Cannot kill low PIDs (system processes)"
+    },
+    {
+      "id": "kill-ppid-1",
+      "category": "process_kill",
+      "pattern": "\\bkill\\s+.*\\bPPID\\b",
+      "reason": "BLOCKED: Cannot kill parent process"
+    },
+    {
+      "id": "kill-ppid-2",
+      "category": "process_kill",
+      "pattern": "\\bkill\\s+.*\\$\\$",
+      "reason": "BLOCKED: Cannot kill current shell"
+    },
+    {
+      "id": "kill-ppid-3",
+      "category": "process_kill",
+      "pattern": "\\bkill\\s+.*\\$PPID",
+      "reason": "BLOCKED: Cannot kill parent process"
+    },
+    {
+      "id": "kill-9",
+      "category": "process_kill",
+      "pattern": "\\bkill\\s+-9\\s+\\d+",
+      "reason": "BLOCKED: Force kill not allowed (use regular kill)"
+    },
+    {
+      "id": "fuser-kill",
+      "category": "process_kill",
+      "pattern": "\\bfuser\\s+-k",
+      "reason": "BLOCKED: Killing processes by file/port"
+    },
+    {
+      "id": "xkill",
+      "category": "process_kill",
+      "pattern": "\\bxkill\\b",
+      "reason": "BLOCKED: X11 process killer"
+    },
+    {
+      "id": "sudo",
+      "category": "privilege",
+      "pattern": "\\bsudo\\b",
+      "reason": "BLOCKED: sudo not available (non-root container)"
+    },
+    {
+      "id": "apt-get",
+      "category": "privilege",
+      "pattern": "\\bapt-get\\b",
+      "reason": "BLOCKED: apt-get requires root (use pip install --user)"
+    },
+    {
+      "id": "apt-install",
+      "category": "privilege",
+      "pattern": "\\bapt\\s+install",
+      "reason": "BLOCKED: apt requires root"
+    },
+    {
+      "id": "stress-1",
+      "category": "stress_test",
+      "pattern": "\\bstress\\b",
+      "reason": "BLOCKED: stress test"
+    },
+    {
+      "id": "stress-2",
+      "category": "stress_test",
+      "pattern": "\\bstress-ng\\b",
+      "reason": "BLOCKED: stress test"
+    },
+    {
+      "id": "sysbench",
+      "category": "stress_test",
+      "pattern": "\\bsysbench\\b",
+      "reason": "BLOCKED: benchmark"
+    },
+    {
+      "id": "cpu-stress",
+      "category": "stress_test",
+      "pattern": "cpu.*stress",
+      "flags": "i",
+      "reason": "BLOCKED: CPU stress test"
+    },
+    {
+      "id": "stress-test",
+      "category": "stress_test",
+      "pattern": "stress.*test",
+      "flags": "i",
+      "reason": "BLOCKED: stress test"
+    },
+    {
+      "id": "load-test",
+      "category": "stress_test",
+      "pattern": "load.*test",
+      "flags": "i",
+      "reason": "BLOCKED: load test"
+    },
+    {
+      "id": "benchmark",
+      "category": "stress_test",
+      "pattern": "benchmark",
+      "flags": "i",
+      "reason": "BLOCKED: benchmark"
+    },
+    {
+      "id": "urandom-bzip",
+      "category": "stress_test",
+      "pattern": "\\/dev\\/urandom.*bzip2",
+      "reason": "BLOCKED: CPU stress via compression"
+    },
+    {
+      "id": "dd-devzero",
+      "category": "stress_test",
+      "pattern": "dd.*\\/dev\\/zero",
+      "reason": "BLOCKED: disk stress"
+    },
+    {
+      "id": "thermal-test",
+      "category": "stress_test",
+      "pattern": "thermal.*test",
+      "flags": "i",
+      "reason": "BLOCKED: thermal test"
+    },
+    {
+      "id": "rustup",
+      "category": "large_install",
+      "pattern": "rustup|cargo\\s+install",
+      "flags": "i",
+      "reason": "BLOCKED: Rust toolchain not available (noexec, use Python/Node instead)"
+    },
+    {
+      "id": "go-install",
+      "category": "large_install",
+      "pattern": "\\bgo\\s+install\\b",
+      "flags": "i",
+      "reason": "BLOCKED: Go toolchain not available"
+    },
+    {
+      "id": "haskell",
+      "category": "large_install",
+      "pattern": "ghcup|cabal\\s+install|stack\\s+install",
+      "flags": "i",
+      "reason": "BLOCKED: Haskell toolchain not available"
+    },
+    {
+      "id": "curl-sh-1",
+      "category": "dangerous_download",
+      "pattern": "curl.*\\.sh\\s*\\|\\s*sh",
+      "flags": "i",
+      "reason": "BLOCKED: Pipe URL to shell is dangerous"
+    },
+    {
+      "id": "wget-sh",
+      "category": "dangerous_download",
+      "pattern": "wget.*\\.sh\\s*\\|\\s*sh",
+      "flags": "i",
+      "reason": "BLOCKED: Pipe URL to shell is dangerous"
+    },
+    {
+      "id": "curl-bash",
+      "category": "dangerous_download",
+      "pattern": "curl.*\\|\\s*bash",
+      "flags": "i",
+      "reason": "BLOCKED: Pipe URL to bash is dangerous"
+    },
+    {
+      "id": "pip-tensorflow",
+      "category": "large_install",
+      "pattern": "pip\\s+install.*\\b(tensorflow|tf-nightly|torch|pytorch|jax|paddle)",
+      "flags": "i",
+      "reason": "BLOCKED: Package too large (several GB). Use smaller libs."
+    },
+    {
+      "id": "pip-transformers",
+      "category": "large_install",
+      "pattern": "pip\\s+install.*\\b(transformers|diffusers|timm|detectron)",
+      "flags": "i",
+      "reason": "BLOCKED: Package too large. Use API instead."
+    },
+    {
+      "id": "pip-cuda",
+      "category": "large_install",
+      "pattern": "pip\\s+install.*\\b(cuda|cudnn|nvidia|apex)",
+      "flags": "i",
+      "reason": "BLOCKED: CUDA packages not available"
+    },
+    {
+      "id": "pip-opencv",
+      "category": "large_install",
+      "pattern": "pip\\s+install.*\\b(opencv-python-headless|opencv-contrib)",
+      "flags": "i",
+      "reason": "BLOCKED: Package too large"
+    },
+    {
+      "id": "npm-tensorflow",
+      "category": "large_install",
+      "pattern": "npm\\s+install.*\\b(@tensorflow|onnxruntime)",
+      "flags": "i",
+      "reason": "BLOCKED: Package too large"
+    },
+
+    {
+      "id": "bypass-ifs-1",
+      "category": "filter_bypass",
+      "pattern": "\\$\\{?IFS\\}?",
+      "reason": "BLOCKED: IFS variable bypass (space filter evasion)"
+    },
+    {
+      "id": "bypass-brace-cmd",
+      "category": "filter_bypass",
+      "pattern": "\\{[a-z]+,[^}]+\\}",
+      "flags": "i",
+      "reason": "BLOCKED: Brace expansion command bypass"
+    },
+    {
+      "id": "bypass-dev-tcp",
+      "category": "reverse_shell",
+      "pattern": "\\/dev\\/tcp\\/",
+      "reason": "BLOCKED: /dev/tcp reverse shell"
+    },
+    {
+      "id": "bypass-dev-udp",
+      "category": "reverse_shell",
+      "pattern": "\\/dev\\/udp\\/",
+      "reason": "BLOCKED: /dev/udp connection"
+    },
+    {
+      "id": "bypass-ansi-c-quote",
+      "category": "filter_bypass",
+      "pattern": "\\$'.*\\\\x[0-9a-f]{2}",
+      "flags": "i",
+      "reason": "BLOCKED: ANSI-C quoting with hex (filter bypass)"
+    },
+    {
+      "id": "bypass-echo-hex",
+      "category": "filter_bypass",
+      "pattern": "echo\\s+-e\\s+[\"']?\\\\x",
+      "reason": "BLOCKED: echo with hex encoding (filter bypass)"
+    },
+    {
+      "id": "bypass-printf-hex",
+      "category": "filter_bypass",
+      "pattern": "printf\\s+[\"']?\\\\x",
+      "reason": "BLOCKED: printf with hex encoding"
+    },
+    {
+      "id": "bypass-var-substring",
+      "category": "filter_bypass",
+      "pattern": "\\$\\{\\w+:[0-9]+:[0-9]+\\}",
+      "reason": "BLOCKED: Variable substring extraction (filter bypass)"
+    },
+    {
+      "id": "bypass-var-replace",
+      "category": "filter_bypass",
+      "pattern": "\\$\\{\\w+\\/\\/[^}]+\\}",
+      "reason": "BLOCKED: Variable pattern replacement (filter bypass)"
+    },
+    {
+      "id": "bypass-backtick-cmd",
+      "category": "command_substitution",
+      "pattern": "`[^`]+`",
+      "reason": "BLOCKED: Backtick command substitution"
+    },
+    {
+      "id": "bypass-dollar-paren",
+      "category": "command_substitution",
+      "pattern": "\\$\\([^)]+\\)",
+      "reason": "BLOCKED: $() command substitution"
+    },
+    {
+      "id": "bypass-wildcard-path",
+      "category": "filter_bypass",
+      "pattern": "\\/\\?{3,}\\/",
+      "reason": "BLOCKED: Wildcard path traversal"
+    },
+    {
+      "id": "bypass-tr-transform",
+      "category": "filter_bypass",
+      "pattern": "\\btr\\s+['\"][^'\"]+['\"]\\s+['\"][^'\"]+['\"]",
+      "reason": "BLOCKED: tr character transformation (filter bypass)"
+    },
+    {
+      "id": "bypass-xxd-reverse",
+      "category": "filter_bypass",
+      "pattern": "xxd\\s+-r",
+      "reason": "BLOCKED: xxd reverse (hex decode)"
+    },
+    {
+      "id": "bypass-nohup",
+      "category": "persistence",
+      "pattern": "\\bnohup\\b",
+      "reason": "BLOCKED: nohup (background persistence)"
+    },
+    {
+      "id": "bypass-disown",
+      "category": "persistence",
+      "pattern": "\\bdisown\\b",
+      "reason": "BLOCKED: disown (detach process)"
+    },
+    {
+      "id": "bypass-setsid",
+      "category": "persistence",
+      "pattern": "\\bsetsid\\b",
+      "reason": "BLOCKED: setsid (new session)"
+    },
+    {
+      "id": "dns-exfil-host",
+      "category": "exfiltration",
+      "pattern": "\\bhost\\s+[\"']?\\$",
+      "reason": "BLOCKED: DNS exfiltration via host command"
+    },
+    {
+      "id": "time-exfil-sleep",
+      "category": "exfiltration",
+      "pattern": "if.*then.*sleep",
+      "reason": "BLOCKED: Time-based data exfiltration"
+    },
+    {
+      "id": "reverse-shell-bash-i",
+      "category": "reverse_shell",
+      "pattern": "bash\\s+-i",
+      "reason": "BLOCKED: Interactive bash (reverse shell)"
+    },
+    {
+      "id": "reverse-shell-nc-e",
+      "category": "reverse_shell",
+      "pattern": "\\bnc\\s+.*-e\\s",
+      "reason": "BLOCKED: netcat with execute"
+    },
+    {
+      "id": "reverse-shell-nc-c",
+      "category": "reverse_shell",
+      "pattern": "\\bnc\\s+.*-c\\s",
+      "reason": "BLOCKED: netcat with command"
+    },
+    {
+      "id": "reverse-shell-socat",
+      "category": "reverse_shell",
+      "pattern": "\\bsocat\\b.*exec:",
+      "flags": "i",
+      "reason": "BLOCKED: socat reverse shell"
+    },
+    {
+      "id": "reverse-shell-perl",
+      "category": "reverse_shell",
+      "pattern": "perl.*socket.*connect",
+      "flags": "i",
+      "reason": "BLOCKED: Perl reverse shell"
+    },
+    {
+      "id": "reverse-shell-ruby",
+      "category": "reverse_shell",
+      "pattern": "ruby.*TCPSocket",
+      "flags": "i",
+      "reason": "BLOCKED: Ruby reverse shell"
+    },
+    {
+      "id": "reverse-shell-php",
+      "category": "reverse_shell",
+      "pattern": "php.*fsockopen",
+      "flags": "i",
+      "reason": "BLOCKED: PHP reverse shell"
+    },
+    {
+      "id": "reverse-shell-telnet",
+      "category": "reverse_shell",
+      "pattern": "\\btelnet\\b.*\\|.*\\b(ba)?sh\\b",
+      "reason": "BLOCKED: Telnet reverse shell"
+    },
+    {
+      "id": "mkfifo-pipe",
+      "category": "reverse_shell",
+      "pattern": "\\bmkfifo\\b",
+      "reason": "BLOCKED: mkfifo (named pipe for shell)"
+    },
+    {
+      "id": "mknod-pipe",
+      "category": "reverse_shell",
+      "pattern": "\\bmknod\\b.*p\\b",
+      "reason": "BLOCKED: mknod pipe (shell redirect)"
+    },
+    {
+      "id": "crontab-edit",
+      "category": "persistence",
+      "pattern": "\\bcrontab\\s+-[eir]",
+      "reason": "BLOCKED: crontab modification"
+    },
+    {
+      "id": "at-schedule",
+      "category": "persistence",
+      "pattern": "\\bat\\s+",
+      "reason": "BLOCKED: at scheduler"
+    },
+    {
+      "id": "systemd-run",
+      "category": "persistence",
+      "pattern": "\\bsystemd-run\\b",
+      "reason": "BLOCKED: systemd-run (service creation)"
+    },
+    {
+      "id": "awk-system",
+      "category": "code_execution",
+      "pattern": "\\bawk\\b.*system\\s*\\(",
+      "reason": "BLOCKED: awk with system() call"
+    },
+    {
+      "id": "sed-exec",
+      "category": "code_execution",
+      "pattern": "\\bsed\\b.*-e.*e\\b",
+      "reason": "BLOCKED: sed with execute"
+    },
+    {
+      "id": "find-exec",
+      "category": "code_execution",
+      "pattern": "\\bfind\\b.*-exec",
+      "reason": "BLOCKED: find with exec"
+    },
+    {
+      "id": "xargs-exec",
+      "category": "code_execution",
+      "pattern": "\\bxargs\\b.*sh\\b",
+      "reason": "BLOCKED: xargs with shell"
+    },
+    {
+      "id": "tar-checkpoint",
+      "category": "code_execution",
+      "pattern": "\\btar\\b.*--checkpoint-action",
+      "reason": "BLOCKED: tar checkpoint action (code exec)"
+    },
+    {
+      "id": "git-hooks",
+      "category": "code_execution",
+      "pattern": "\\.git\\/hooks",
+      "reason": "BLOCKED: Git hooks modification"
+    },
+    {
+      "id": "ld-preload",
+      "category": "code_execution",
+      "pattern": "LD_PRELOAD",
+      "reason": "BLOCKED: LD_PRELOAD injection"
+    },
+    {
+      "id": "ld-library-path",
+      "category": "code_execution",
+      "pattern": "LD_LIBRARY_PATH",
+      "reason": "BLOCKED: LD_LIBRARY_PATH manipulation"
+    },
+    {
+      "id": "pythonpath",
+      "category": "code_execution",
+      "pattern": "PYTHONPATH",
+      "reason": "BLOCKED: PYTHONPATH manipulation"
+    },
+    {
+      "id": "node-path",
+      "category": "code_execution",
+      "pattern": "NODE_PATH",
+      "reason": "BLOCKED: NODE_PATH manipulation"
+    },
+    {
+      "id": "interactsh",
+      "category": "exfiltration",
+      "pattern": "interactsh|interact\\.sh|oast\\.",
+      "flags": "i",
+      "reason": "BLOCKED: Interactsh OOB exfiltration"
+    },
+    {
+      "id": "oastify",
+      "category": "exfiltration",
+      "pattern": "oastify\\.com",
+      "reason": "BLOCKED: Burp Collaborator"
+    },
+    {
+      "id": "dnslog",
+      "category": "exfiltration",
+      "pattern": "dnslog\\.|ceye\\.io",
+      "reason": "BLOCKED: DNS logging services"
+    },
+    {
+      "id": "commix",
+      "category": "attack_tool",
+      "pattern": "commix",
+      "flags": "i",
+      "reason": "BLOCKED: Commix injection tool"
+    },
+    {
+      "id": "sqlmap",
+      "category": "attack_tool",
+      "pattern": "sqlmap",
+      "flags": "i",
+      "reason": "BLOCKED: SQLmap tool"
+    },
+    {
+      "id": "metasploit",
+      "category": "attack_tool",
+      "pattern": "msfvenom|msfconsole|metasploit",
+      "flags": "i",
+      "reason": "BLOCKED: Metasploit tools"
+    },
+    {
+      "id": "empire",
+      "category": "attack_tool",
+      "pattern": "powershell-empire|starkiller",
+      "flags": "i",
+      "reason": "BLOCKED: Empire C2"
+    },
+    {
+      "id": "cobalt-strike",
+      "category": "attack_tool",
+      "pattern": "cobaltstrike|beacon\\.dll",
+      "flags": "i",
+      "reason": "BLOCKED: Cobalt Strike"
+    },
+    {
+      "id": "eval-cmd",
+      "category": "code_execution",
+      "pattern": "\\beval\\s+[\"']?\\$",
+      "reason": "BLOCKED: eval with variable"
+    },
+    {
+      "id": "source-remote",
+      "category": "code_execution",
+      "pattern": "\\bsource\\s+<\\(",
+      "reason": "BLOCKED: source with process substitution"
+    },
+    {
+      "id": "dot-source",
+      "category": "code_execution",
+      "pattern": "\\b\\.\\s+\\/dev\\/",
+      "reason": "BLOCKED: dot source from /dev"
+    },
+    {
+      "id": "proc-fd",
+      "category": "escape",
+      "pattern": "\\/proc\\/\\d+\\/fd",
+      "reason": "BLOCKED: /proc/*/fd access"
+    },
+    {
+      "id": "proc-exe",
+      "category": "escape",
+      "pattern": "\\/proc\\/\\d+\\/exe",
+      "reason": "BLOCKED: /proc/*/exe access"
+    },
+    {
+      "id": "proc-cmdline",
+      "category": "escape",
+      "pattern": "\\/proc\\/\\d+\\/cmdline",
+      "reason": "BLOCKED: /proc/*/cmdline access"
+    },
+    {
+      "id": "proc-maps",
+      "category": "escape",
+      "pattern": "\\/proc\\/\\d+\\/maps",
+      "reason": "BLOCKED: /proc/*/maps access"
+    },
+    {
+      "id": "debugfs",
+      "category": "escape",
+      "pattern": "\\bdebugfs\\b",
+      "reason": "BLOCKED: debugfs (filesystem debug)"
+    },
+    {
+      "id": "nsenter",
+      "category": "escape",
+      "pattern": "\\bnsenter\\b",
+      "reason": "BLOCKED: nsenter (namespace enter)"
+    },
+    {
+      "id": "unshare",
+      "category": "escape",
+      "pattern": "\\bunshare\\b",
+      "reason": "BLOCKED: unshare (namespace creation)"
+    },
+    {
+      "id": "setns",
+      "category": "escape",
+      "pattern": "\\bsetns\\b",
+      "reason": "BLOCKED: setns syscall"
+    },
+    {
+      "id": "capsh",
+      "category": "privilege",
+      "pattern": "\\bcapsh\\b",
+      "reason": "BLOCKED: capsh (capability shell)"
+    },
+    {
+      "id": "getcap",
+      "category": "recon",
+      "pattern": "\\bgetcap\\b",
+      "reason": "BLOCKED: getcap (find capabilities)"
+    },
+    {
+      "id": "setcap",
+      "category": "privilege",
+      "pattern": "\\bsetcap\\b",
+      "reason": "BLOCKED: setcap (set capabilities)"
+    },
+    {
+      "id": "chroot",
+      "category": "escape",
+      "pattern": "\\bchroot\\b",
+      "reason": "BLOCKED: chroot (change root)"
+    },
+    {
+      "id": "pivot-root",
+      "category": "escape",
+      "pattern": "\\bpivot_root\\b",
+      "reason": "BLOCKED: pivot_root"
+    },
+    {
+      "id": "mount-bind",
+      "category": "escape",
+      "pattern": "\\bmount\\b.*--bind",
+      "reason": "BLOCKED: bind mount"
+    },
+    {
+      "id": "mount-proc",
+      "category": "escape",
+      "pattern": "\\bmount\\b.*-t\\s*proc",
+      "reason": "BLOCKED: mount proc"
+    },
+    {
+      "id": "cgroup-escape",
+      "category": "escape",
+      "pattern": "\\/sys\\/fs\\/cgroup.*release_agent",
+      "reason": "BLOCKED: cgroup release_agent escape"
+    },
+    {
+      "id": "cgroup-notify",
+      "category": "escape",
+      "pattern": "\\/sys\\/fs\\/cgroup.*notify_on_release",
+      "reason": "BLOCKED: cgroup notify escape"
+    },
+
+    {
+      "id": "reverse-string-trick",
+      "category": "obfuscation",
+      "pattern": "\\[::-1\\]",
+      "reason": "BLOCKED: String reversal (obfuscation technique)"
+    },
+    {
+      "id": "importlib-import",
+      "category": "code_execution",
+      "pattern": "importlib\\.import_module",
+      "reason": "BLOCKED: Dynamic module import"
+    },
+    {
+      "id": "getattr-module",
+      "category": "code_execution",
+      "pattern": "getattr\\s*\\([^,]+,\\s*['\"]",
+      "reason": "BLOCKED: Dynamic attribute access"
+    },
+    {
+      "id": "exec-builtin",
+      "category": "code_execution",
+      "pattern": "\\bexec\\s*\\(",
+      "reason": "BLOCKED: exec() call"
+    },
+    {
+      "id": "compile-builtin",
+      "category": "code_execution",
+      "pattern": "\\bcompile\\s*\\(",
+      "reason": "BLOCKED: compile() call"
+    },
+    {
+      "id": "builtins-access",
+      "category": "code_execution",
+      "pattern": "__builtins__|__import__|__globals__|__code__",
+      "reason": "BLOCKED: Python internals access"
+    },
+    {
+      "id": "reversed-builtin",
+      "category": "obfuscation",
+      "pattern": "\\breversed\\s*\\(",
+      "reason": "BLOCKED: reversed() for obfuscation"
+    },
+    {
+      "id": "join-reverse-pattern",
+      "category": "obfuscation",
+      "pattern": "join\\s*\\(.*\\)\\s*\\[::-1\\]",
+      "reason": "BLOCKED: Join + reverse obfuscation"
+    },
+    {
+      "id": "chr-ord-decode",
+      "category": "obfuscation",
+      "pattern": "chr\\s*\\(\\s*\\d+\\s*\\)",
+      "reason": "BLOCKED: chr() character building"
+    },
+    {
+      "id": "bytes-decode",
+      "category": "obfuscation",
+      "pattern": "bytes\\s*\\(\\s*\\[.*\\]\\s*\\)\\.decode",
+      "reason": "BLOCKED: bytes array decoding"
+    },
+    {
+      "id": "workspace-root-ls",
+      "category": "cross-user",
+      "pattern": "ls\\s+(-[a-zA-Z]*\\s+)*(/workspace|\\.\\./)(?!\\d)",
+      "reason": "BLOCKED: Cannot list other users workspaces"
+    },
+    {
+      "id": "workspace-root-direct",
+      "category": "cross-user",
+      "pattern": "\\bls\\b.*\\/workspace\\s*$",
+      "reason": "BLOCKED: Cannot list workspace root"
+    },
+    {
+      "id": "shared-dir-access",
+      "category": "cross-user",
+      "pattern": "/_shared/|_shared/GLOBAL|_shared/CHAT",
+      "reason": "BLOCKED: Cannot access shared logs directly"
+    },
+    {
+      "id": "cd-parent-workspace",
+      "category": "cross-user",
+      "pattern": "cd\\s+\\.\\.",
+      "reason": "BLOCKED: Cannot navigate to parent directory"
+    },
+    {
+      "id": "cd-dotdot-in-script",
+      "category": "cross-user",
+      "pattern": "\\.\\./\\.\\.|\\.\\. &&|\\.\\.;|\\.\\.\\n",
+      "reason": "BLOCKED: Cannot navigate outside workspace"
+    },
+    {
+      "id": "find-workspace",
+      "category": "cross-user",
+      "pattern": "find\\s+(/workspace|\\.\\.)",
+      "reason": "BLOCKED: Cannot search outside your workspace"
+    }
+  ]
+}
