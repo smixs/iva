@@ -119,6 +119,8 @@
     <li>🎙️ <b>Voice &amp; video</b> — transcribes voice notes and video circles, understands many languages.</li>
     <li>🧠 <b>Layered memory</b> — day → week → month → year, plus fact cards on people, projects and decisions; rewrites facts that change instead of piling up contradictions.</li>
     <li>🔎 <b>Smart search</b> — finds things by meaning and by links between cards, in any language — not just the exact word.</li>
+    <li>🧭 <b>Decision memory</b> — what you decided, when and why, with the old version kept dated as it changes.</li>
+    <li>📇 <b>Personal CRM</b> — quietly tracks your people: who they are, what you agreed, when to follow up.</li>
     <li>🛡️ <b>Safe by default</b> — forwards, files and web pages are screened for prompt-injection; secrets are scrubbed from replies.</li>
     <li>⏰ <b>On a schedule</b> — day or week digests, recurring jobs, inbox summaries, on time.</li>
     <li>🔔 <b>Reminders</b> — tell it what and when, it won't let you forget.</li>
@@ -135,12 +137,17 @@
     🌿 BRANCHES — monthly summaries, built from weeks, built from days
    ╱      ╲
   🍃 LEAVES     — the full, word-for-word transcript of each day</div>
-  <p>Every night Iva summarizes the leaves and folds them up the branches — a hierarchical summary DAG
-  that compacts older days while keeping a pointer to every original. It's the part I've worked on
-  longest (<a href="https://github.com/smixs/agent-second-brain">agent-second-brain</a> → <a href="https://github.com/smixs/autograph/tree/main">autograph</a> →
+  <p>Every night Iva reads the day, writes what matters into typed cards — people, projects, decisions,
+  ideas — and folds the leaves up the branches. Recall runs on BM25 over a full-text index built right
+  into SQLite (no separate database, no server), reranked by how cards link in the graph; optional vector
+  search adds true semantics with one key.</p>
+  <p><b>Decisions, over time</b> — the part I care about most. A decision is its own card: what you
+  decided, when, and why. Change your mind and Iva rewrites the current answer but keeps the old version
+  in a dated history on the same card — so you always see what's true now, plus the trail of how it got
+  there. It's the part I've worked on longest
+  (<a href="https://github.com/smixs/agent-second-brain">agent-second-brain</a> → <a href="https://github.com/smixs/autograph/tree/main">autograph</a> →
   Iva), built on the <a href="https://arxiv.org/abs/2605.04050">LCM: Lossless Context Management</a> paper
-  plus a lot of practice — one of the best memory designs you'll find in a personal agent today. Zero
-  infrastructure, fully inspectable, git-diffable — no vector DB to run, sync or pay for.</p>
+  plus a lot of practice. Zero infrastructure, fully inspectable, git-diffable.</p>
 
   <h2>Security</h2>
   <p>Iva runs on your own box, and you'll forward it things from the outside — a link, a PDF, someone

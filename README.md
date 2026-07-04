@@ -4,7 +4,7 @@
 
 <img src="assets/iva-header.webp" alt="Iva — a personal assistant in Telegram that remembers everything" width="100%">
 
-**A personal assistant in Telegram that remembers everything.** Throw it voice notes, files, forwarded posts, videos — it reads them itself, files them, and links them together. One command puts it on your own server. You talk, it files.
+**A personal assistant in Telegram that remembers everything.** Throw it voice notes, files, forwarded posts — it reads them, files them, and links them into memory. It keeps a CRM of your people, reminds you what's due, and tracks your decisions — what you chose, when, and how it changed. One command puts it on your own server. You talk, it files.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
@@ -25,6 +25,8 @@ Iva is a personal assistant that lives in your Telegram and remembers everything
 
 Its memory has layers. The word-for-word transcript of each day, summaries folded up into weeks, months and a year, and fact cards on the people and projects that matter — reorganized every night while you sleep. When something changes — you switch jobs, a decision is reverted — it rewrites the current truth and keeps the old version dated, so it never drowns in its own contradictions.
 
+And it doesn't just remember, it runs things. It keeps a quiet CRM of your people — who they are, what you agreed, when to follow up. It sets reminders and morning digests. And you can bolt on more: add a skill or connect a service over MCP — your calendar, your inbox, your tools — and Iva drives that too, filing everything it learns into the same memory. The decisions especially: what you decided, when, why, and how it changed over time.
+
 And it's yours. Everything runs on your own cheap server — about $9 a month — with your keys and your data. Anything you forward is screened for hidden prompt-injection before the model reads it, and secrets never leak out of a reply. One command installs it; fully open source, almost nothing to set up.
 
 ---
@@ -44,6 +46,8 @@ So I made the choices. I test agents, models and stacks constantly, keep what ac
 | 🎙️ **Voice & video** | Transcribes voice notes and video messages in any language (Deepgram nova-3). |
 | 🧠 **Long memory** | Remembers your conversations, tidies them at night, and rewrites facts that change instead of piling up contradictions. |
 | 🔎 **Smart search** | Ranks memory by relevance and by links between cards — finds things by meaning, not the exact word, in any language. |
+| 🧭 **Decision memory** | Remembers what you decided, when and why — and keeps the old version dated as the decision changes. |
+| 📇 **Personal CRM** | Quietly tracks your people — who they are, what you agreed, when to follow up. |
 | 🛡️ **Safe by default** | Forwarded messages, files and web pages are screened for prompt-injection; API keys and secrets are scrubbed from replies before they go out. |
 | ⏰ **On a schedule** | Day or week digests, recurring jobs; it can check your inbox and send you a summary. |
 | 🔔 **Reminders** | Tell it what and when — it won't forget. |
@@ -55,7 +59,9 @@ So I made the choices. I test agents, models and stacks constantly, keep what ac
 
 ## Memory — the part that compounds
 
-Most agents forget you the moment the context window fills up. Iva doesn't. Its memory is shaped like a tree — and *Iva* means *willow*, so it fits.
+Most agents forget you the moment the context window fills up. Iva doesn't. Here's how it actually works.
+
+**You talk, it files.** Everything you send lands first in a raw daily log, word for word. Every night Iva reads the day, pulls out what matters — people, projects, decisions, ideas — and writes each as a typed card in plain markdown, linked to the others. Then it folds the day up into summaries: a day, a week built from days, a month from weeks, a year from months. That's the tree — and *Iva* means *willow*, so it fits.
 
 ```
         🪵  TRUNK    - year + cards on people, projects, decisions (the big picture)
@@ -65,15 +71,11 @@ Most agents forget you the moment the context window fills up. Iva doesn't. Its 
     🍃 LEAVES        - the full, word-for-word transcript of each day
 ```
 
-- Leaves — the raw transcript of each day, word for word.
-- Branches — short summaries: first per day, then a week folded from days, a month from weeks.
-- Trunk — it all converges into the big picture: the year, plus fact cards on the people, projects and decisions that matter.
+**Finding things.** Iva never loads its whole history into the model. One tiny always-on core file says who you are; everything else is pulled in per question by a ranked search — BM25 over a full-text index built right into SQLite (no separate database, no server to run), then reranked by how closely cards link to each other in the graph. So it finds by meaning and by relationship, not the exact word, in any language. Want true semantics for fuzzy or cross-language queries? Turn on the optional vector mode with one key — off by default, base memory needs nothing.
 
-Every night Iva does the tidying itself: it summarizes the leaves and folds them up the branches. So it can recall word-for-word what was said on a particular Tuesday, and tell you what you spent the whole month on.
+**Decisions, over time — the part I care about most.** A decision is its own kind of card: what you decided, when, and why. Change your mind later and Iva rewrites the current decision but keeps the old version in a dated history on the same card. Same for any fact that shifts — a job, a city, a status, a price. You always see what's true *now*, plus the trail of how it got there. The memory sharpens with use instead of drowning in contradictions.
 
-This is low-context memory by design. Iva never loads its whole history into the model. Always in context is one tiny CORE file — who you are, your standing preferences, active goals. Everything else is pulled in for the specific task by a ranked search that scores cards by relevance and by the links between them. When a fact changes, the current value is rewritten and the old one kept in a dated history — so the longer you use it, the fewer stale contradictions it carries.
-
-Memory is the part I've worked on longest: first [agent-second-brain](https://github.com/smixs/agent-second-brain), then the typed-graph skill [autograph](https://github.com/smixs/autograph/tree/main), and all of that experience is gathered here. The tree above is a hierarchical summary DAG: older days get compressed, but a pointer back to the original stays. At its core is the idea from the [LCM: Lossless Context Management](https://arxiv.org/abs/2605.04050) paper (Ehrlich & Blackman, 2026), plus my own work on top. One of the best memory designs a personal agent has today — and it runs on open models you own, no subscription.
+Memory is the part I've worked on longest: first [agent-second-brain](https://github.com/smixs/agent-second-brain), then the typed-graph skill [autograph](https://github.com/smixs/autograph/tree/main), and all of that experience is gathered here. At its core is the idea from the [LCM: Lossless Context Management](https://arxiv.org/abs/2605.04050) paper (Ehrlich & Blackman, 2026), plus my own work on top. One of the best memory designs a personal agent has today — and it runs on open models you own, no subscription.
 
 ---
 
