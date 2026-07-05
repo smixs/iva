@@ -1,0 +1,27 @@
+# Iva
+
+> Iva is a self-hosted Telegram AI assistant with layered memory that turns your messages into an Obsidian-compatible vault.
+
+One command installs it on your own server, it runs on open models for about $9/mo, and the code is MIT-licensed.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
+```
+
+## Docs
+
+- [Install](https://smixs.github.io/iva/install.md): One command on a fresh Ubuntu VPS — requirements, what install.sh does, flags, and the bot's first message
+- [Configuration](https://smixs.github.io/iva/configuration.md): Every .env variable and the setup wizard (`iva config`)
+- [Memory](https://smixs.github.io/iva/memory.md): The layered vault — daily transcripts, nightly rollups, typed cards, CORE.md, BM25 + graph search
+- [Security & privacy](https://smixs.github.io/iva/security.md): Inbound injection screening, outbound secret redaction, fail-closed user allowlist
+- [Providers & cost](https://smixs.github.io/iva/providers.md): Every external service Iva talks to, with real prices — models, transcription, vision, search
+- [Deploy](https://smixs.github.io/iva/deploy.md): The two systemd services and five timers, long polling, updates, backups
+- [Command reference](https://smixs.github.io/iva/cli.md): Telegram slash commands and the `iva` CLI
+- [Extending](https://smixs.github.io/iva/extending.md): Add skills, MCP connections, and custom tools
+- [FAQ](https://smixs.github.io/iva/faq.md): Short answers on cost, models, privacy, and Obsidian
+- [Troubleshooting](https://smixs.github.io/iva/troubleshooting.md): Diagnosing a silent bot, failed timers, and provider errors
+
+## Optional
+
+- [README (Russian)](https://github.com/smixs/iva/blob/main/README.ru.md): Full project README in Russian
+- [Changelog](https://github.com/smixs/iva/blob/main/CHANGELOG.md): Release history
