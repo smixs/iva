@@ -41,8 +41,8 @@ Notes: the model list is pulled from your subscription at setup time, so you alw
 One key, [300+ models](https://openrouter.ai/models) from every major vendor (Anthropic, OpenAI, Google, DeepSeek, Meta…), billed pay-as-you-go straight by OpenRouter. Because there are hundreds of models, setup doesn't show a picker — you paste the model **slug** yourself:
 
 1. Grab a key at [openrouter.ai/keys](https://openrouter.ai/keys) (`sk-or-…`).
-2. Open [openrouter.ai/models](https://openrouter.ai/models), pick a model, copy its slug — the `vendor/model` id shown under the name (e.g. `anthropic/claude-sonnet-4.5`, `openai/gpt-5.1`, `google/gemini-2.5-pro`). Optional routing suffixes like `:free`/`:nitro` are allowed.
-3. `iva config` → provider `4` → paste the key, then the slug. **It sends a live test request** and only moves on once the model actually answers — so a mistyped slug can't slip through and leave the bot silent.
+2. Open [openrouter.ai/models](https://openrouter.ai/models), pick a model, copy its slug — the `vendor/model` id shown under the name (e.g. `anthropic/claude-sonnet-4.5`, `openai/gpt-5.1`, `google/gemini-2.5-pro`). Optional routing suffixes like `:free`/`:nitro` are allowed. The model must support **tool / function calling** — Iva is an agent and sends tools every turn (image-only or chat-only models won't work).
+3. `iva config` → provider `4` → paste the key, then the slug. **It sends a live test request that includes a tool call** and only moves on once the model actually answers with tools enabled — so a mistyped slug, or a model that can't do function calling, can't slip through and leave the bot silent.
 
 Set `OPENROUTER_CONTEXT_WINDOW` to the real window of the model you picked. Images are described through `google/gemini-2.5-flash` (cheap, always multimodal) regardless of your text model, so vision works even if the text model you chose is text-only — those image calls bill to your OpenRouter credit too.
 

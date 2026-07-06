@@ -187,31 +187,41 @@ async function openrouterKeyCheck(key) {
   }
 }
 // OpenRouter: ЖИВОЙ тест модели — реальный вызов chat/completions выбранным слагом.
-// Кривой слаг → бэкенд 400 "not a valid model id" → возвращаем строку → мастер зациклит ввод.
-// Именно это ловит «слаг вписан криво, всё принято, а агент молчит».
+// Запрос НЕСЁТ минимальный tools-блок: Iva — агент, каждый ход шлёт tool-definitions, поэтому
+// chat-only модель (без function calling) сломается на первом же ходе. Один запрос ловит всё:
+//   кривой слаг → 400 "not a valid model id";  битый ключ → 401;
+//   модель без tool-эндпоинта → 404 "No endpoints found that support tool use".
+// Не-200 → возвращаем строку → мастер зациклит ввод. Именно это ловит «принято, а агент молчит».
 async function openrouterModelCheck(key, model) {
   try {
     const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: "ping" }], max_tokens: 16 }),
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: "Call the ping tool." }],
+        tools: [{ type: "function", function: { name: "ping", description: "health check", parameters: { type: "object", properties: {} } } }],
+        tool_choice: "auto",
+        max_tokens: 32,
+      }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = j?.error?.message || `HTTP ${res.status}`;
       return t(
-        `the model didn't answer: ${msg}. Check the slug on https://openrouter.ai/models (form vendor/model).`,
-        `модель не ответила: ${msg}. Проверьте слаг на https://openrouter.ai/models (вид vendor/model).`,
+        `the model can't be used: ${msg}. Iva needs a chat model with tool/function calling — pick one on https://openrouter.ai/models (form vendor/model).`,
+        `модель не подходит: ${msg}. Iva нужна chat-модель с поддержкой инструментов (function calling) — выберите такую на https://openrouter.ai/models (вид vendor/model).`,
       );
     }
-    // 200, но пустой контент — не блокируем (reasoning-модель могла упереться в max_tokens), лишь предупреждаем.
-    const content = j?.choices?.[0]?.message?.content;
-    if (!content || !content.trim()) {
+    // 200 = ключ+слаг+tools ок. «Ответила» = есть content ИЛИ tool_calls (модель могла сразу дёрнуть tool).
+    const msg = j?.choices?.[0]?.message;
+    const answered = (msg?.content && msg.content.trim()) || (Array.isArray(msg?.tool_calls) && msg.tool_calls.length);
+    if (!answered) {
       console.log(
         `${C.y}${t("(model replied empty — maybe a reasoning model / max_tokens; proceeding)", "(модель ответила пусто — возможно reasoning-модель / max_tokens; продолжаю)")}${C.x}`,
       );
     }
-    return null; // ответила — слаг валиден
+    return null; // слаг валиден и tool-совместим
   } catch (e) {
     return t(`request failed: ${e.message}`, `запрос не прошёл: ${e.message}`);
   }
@@ -371,7 +381,7 @@ async function main() {
     // 300+ моделей — пикер не подходит. Инструкция: откуда взять слаг и в каком виде, + живой тест.
     console.log(`\n  ${t("Now the model.", "Теперь модель.")} ${t("Open", "Откройте")} ${C.c}https://openrouter.ai/models${C.x}, ${t("pick a model and copy its slug", "выберите модель и скопируйте её слаг")}`);
     console.log(`  ${t("— the id under the name, form", "— id под названием, вид")} ${C.g}vendor/model${C.x} (${t("e.g.", "напр.")} ${C.g}anthropic/claude-sonnet-4.5${C.x}, ${C.g}openai/gpt-5.1${C.x}, ${C.g}google/gemini-2.5-pro${C.x}).`);
-    console.log(`  ${C.y}${t("I'll send a test request right away — so a wrong slug can't slip through and leave the bot mute.", "Сразу отправлю тестовый запрос — чтобы кривой слаг не проскочил и бот не остался немым.")}${C.x}`);
+    console.log(`  ${C.y}${t("I'll send a live test (incl. tool/function calling, which Iva needs) — so a wrong or chat-only model can't slip through and leave the bot mute.", "Сразу отправлю живой тест (включая поддержку инструментов — она нужна Iva) — чтобы кривая или chat-only модель не проскочила и бот не остался немым.")}${C.x}`);
     for (;;) {
       const m = (await ask(`  ${t("OpenRouter model slug", "Слаг модели OpenRouter")}`, out.OPENROUTER_MODEL || "")).trim();
       if (!m) {
