@@ -38,6 +38,7 @@ The installer puts `iva` in `~/.local/bin`. Commands that touch systemd need a L
 |---|---|
 | `iva update [--force]` | git fetch + fast-forward (hard-reset if upstream was force-pushed), `npm ci` when package files changed, `eve build`, restart. `--force` rebuilds with no new commits. A failed build never restarts the service — the old build keeps running |
 | `iva config` | The 5-step setup wizard, then offers a restart to apply |
+| `iva login [--browser]` | Sign in to an OpenAI (ChatGPT) subscription for `MODEL_PROVIDER=codex`. Default is device code (a link + one-time code, works on a headless VPS); `--browser` runs the local PKCE flow. Token → `data/codex-auth.json` (chmod 600) |
 | `iva doctor` | Checks Node ≥ 24, `.env` keys, build, units, both services, 5 memory timers, vault git origin — auto-repairs what's safe |
 | `iva status` | Status of both services + the memory-timer schedule |
 | `iva restart` | Regenerates units (keeps the port in sync with `IVA_PORT`), restarts agent + bridge |

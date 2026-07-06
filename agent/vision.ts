@@ -1,13 +1,32 @@
-import { providerConfig } from "./provider.js";
+import { generateText } from "ai";
+import { providerConfig, providerName, makeCodexModel } from "./provider.js";
 
 const PROMPT =
   "Опиши изображение детально и по делу: что на нём, дословный текст (OCR), важные детали и цифры. " +
   "Без преамбул и воды — только содержимое.";
 
-// Распознаёт картинку vision-моделью ТОГО ЖЕ провайдера (на существующем ключе, без доп-подписок).
+// Распознаёт картинку vision-моделью ТОГО ЖЕ провайдера (на существующем доступе, без доп-подписок).
 // Возвращает текстовое описание, либо "" если распознать нечем (нет ключа/vision-модели).
 // Сетевые/HTTP-ошибки бросает — вызывающий ловит и продолжает ход без зрения (graceful).
 export async function describeImage(bytes: ArrayBuffer, mimeType?: string): Promise<string> {
+  // codex-подписка: Responses API мультимодален — гоним картинку через ту же модель/токен.
+  if (providerName === "codex") {
+    const { text } = await generateText({
+      model: makeCodexModel(providerConfig.visionModel),
+      providerOptions: { openai: { store: false } },
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: PROMPT },
+            { type: "image", image: new Uint8Array(bytes), mediaType: mimeType || "image/jpeg" },
+          ],
+        },
+      ],
+    });
+    return (text ?? "").trim();
+  }
+
   const { baseURL, apiKey, visionModel } = providerConfig;
   if (!apiKey || !visionModel) return "";
   const b64 = Buffer.from(bytes).toString("base64");

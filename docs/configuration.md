@@ -12,17 +12,21 @@ No rebuild. Swapping a model, key or provider is edit → restart.
 
 ## Model provider
 
-Two providers, both OpenAI-compatible. Pick one with `MODEL_PROVIDER` and fill only that block. Prices and full model lists: [providers.md](./providers.md).
+Three providers. Pick one with `MODEL_PROVIDER` and fill only that block. `ollama`/`opencode` are OpenAI-compatible API keys; `codex` rides your OpenAI (ChatGPT) subscription via OAuth — no key. Prices and full model lists: [providers.md](./providers.md).
 
 | Variable | Default | Notes |
 |---|---|---|
-| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud) or `opencode` (OpenCode Zen). |
+| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud), `opencode` (OpenCode Zen) or `codex` (OpenAI ChatGPT subscription). |
 | `OLLAMA_API_KEY` | — | Key from ollama.com. |
 | `OLLAMA_MODEL` | `deepseek-v4-pro` | Any model on your Ollama Cloud plan. |
 | `OLLAMA_CONTEXT_WINDOW` | `131072` | See warning below. |
 | `OPENCODE_API_KEY` | — | Key from opencode.ai/auth. |
 | `OPENCODE_MODEL` | `opencode-go/deepseek-v4-pro` | Any Zen Go model. |
 | `OPENCODE_CONTEXT_WINDOW` | `131072` | Same warning. |
+| `CODEX_MODEL` | `gpt-5.1` | Model from your OpenAI plan. `iva config` lists what your subscription actually exposes. |
+| `CODEX_CONTEXT_WINDOW` | `272000` | Same warning — set the real window of the model you picked. |
+
+For `codex` there is no API key in `.env`: run `iva login` (device code, headless-friendly) or `iva login --browser`. The OAuth token lives in `data/codex-auth.json` (chmod 600, gitignored) and is auto-refreshed before it expires. Full flow: [providers.md](./providers.md#openai-by-chatgpt-subscription-codex).
 
 **Don't inflate the context window.** Compaction triggers at 70% of this number. Set it above the model's real window and the compactor fires too late — the request overflows before history gets trimmed. When you switch models, enter the new model's actual window, not a rounder bigger one.
 
