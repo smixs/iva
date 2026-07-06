@@ -26,7 +26,7 @@ iva restart
 | `OPENCODE_API_KEY` | — | Ключ с opencode.ai/auth. |
 | `OPENCODE_MODEL` | `opencode-go/deepseek-v4-pro` | Любая модель Zen Go. |
 | `OPENCODE_CONTEXT_WINDOW` | `131072` | То же предупреждение. |
-| `CODEX_MODEL` | `gpt-5.1` | Модель вашего тарифа OpenAI. `iva config` покажет реальный список подписки. |
+| `CODEX_MODEL` | `gpt-5.5` | Модель вашего тарифа OpenAI. `iva config` покажет реальный список подписки. |
 | `CODEX_CONTEXT_WINDOW` | `272000` | То же предупреждение — впишите реальное окно выбранной модели. |
 
 Для `codex` ключа в `.env` нет: выполните `iva login` (по ссылке+коду, годится для headless-VPS) или `iva login --browser`. OAuth-токен лежит в `data/codex-auth.json` (chmod 600, в gitignore) и автоматически обновляется до истечения. Полный сценарий: [providers.md](../providers.md#openai-by-chatgpt-subscription-codex).

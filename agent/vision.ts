@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { streamText } from "ai";
 import { providerConfig, providerName, makeCodexModel } from "./provider.js";
 
 const PROMPT =
@@ -10,21 +10,24 @@ const PROMPT =
 // Сетевые/HTTP-ошибки бросает — вызывающий ловит и продолжает ход без зрения (graceful).
 export async function describeImage(bytes: ArrayBuffer, mimeType?: string): Promise<string> {
   // codex-подписка: Responses API мультимодален — гоним картинку через ту же модель/токен.
+  // ВАЖНО: бэкенд подписки принимает ТОЛЬКО stream:true → streamText, не generateText (иначе 400).
   if (providerName === "codex") {
-    const { text } = await generateText({
+    const result = streamText({
       model: makeCodexModel(providerConfig.visionModel),
-      providerOptions: { openai: { store: false } },
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: PROMPT },
-            { type: "image", image: new Uint8Array(bytes), mediaType: mimeType || "image/jpeg" },
+            // file-part (не устаревший image-part): AI SDK кодирует его в input_image для Responses.
+            { type: "file", data: new Uint8Array(bytes), mediaType: mimeType || "image/jpeg" },
           ],
         },
       ],
     });
-    return (text ?? "").trim();
+    let out = "";
+    for await (const chunk of result.textStream) out += chunk;
+    return out.trim();
   }
 
   const { baseURL, apiKey, visionModel } = providerConfig;

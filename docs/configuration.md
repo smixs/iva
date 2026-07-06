@@ -23,7 +23,7 @@ Three providers. Pick one with `MODEL_PROVIDER` and fill only that block. `ollam
 | `OPENCODE_API_KEY` | — | Key from opencode.ai/auth. |
 | `OPENCODE_MODEL` | `opencode-go/deepseek-v4-pro` | Any Zen Go model. |
 | `OPENCODE_CONTEXT_WINDOW` | `131072` | Same warning. |
-| `CODEX_MODEL` | `gpt-5.1` | Model from your OpenAI plan. `iva config` lists what your subscription actually exposes. |
+| `CODEX_MODEL` | `gpt-5.5` | Model from your OpenAI plan. `iva config` lists what your subscription actually exposes. |
 | `CODEX_CONTEXT_WINDOW` | `272000` | Same warning — set the real window of the model you picked. |
 
 For `codex` there is no API key in `.env`: run `iva login` (device code, headless-friendly) or `iva login --browser`. The OAuth token lives in `data/codex-auth.json` (chmod 600, gitignored) and is auto-refreshed before it expires. Full flow: [providers.md](./providers.md#openai-by-chatgpt-subscription-codex).

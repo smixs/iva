@@ -30,10 +30,10 @@ const PROVIDERS = {
   codex: {
     baseURL: CODEX_BASE_URL,
     apiKey: undefined, // авторизация — OAuth-токен подписки, не статичный ключ (см. codexFetch)
-    textModel: process.env.CODEX_MODEL ?? "gpt-5.1",
+    textModel: process.env.CODEX_MODEL ?? "gpt-5.5",
     contextWindow: Number(process.env.CODEX_CONTEXT_WINDOW ?? 272000),
     // gpt-5* мультимодальны — картинки идут через ту же подписку (см. agent/vision.ts).
-    visionModel: process.env.CODEX_MODEL ?? "gpt-5.1",
+    visionModel: process.env.CODEX_MODEL ?? "gpt-5.5",
   },
 } as const;
 

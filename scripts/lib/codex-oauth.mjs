@@ -20,7 +20,9 @@ export const CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 const TOKEN_URL = `${ISSUER}/oauth/token`;
 const SCOPE = "openid profile email offline_access";
 const ORIGINATOR = "codex_cli_rs";
-const CLIENT_VERSION = "0.20.0"; // для ?client_version= у /models и User-Agent (мимикрия под codex CLI)
+// Для ?client_version= у /models и User-Agent. ВАЖНО: /models гейтит список по версии —
+// слишком старая (напр. 0.20/0.42) → бэкенд отдаёт {"models":[]}. Держим на актуальном релизе codex.
+const CLIENT_VERSION = "0.142.5";
 const REFRESH_SKEW_S = 300; // рефрешим за 5 мин до exp (как окно codex CLI)
 const DEVICE_PORT = 1455; // codex-совместимый redirect-порт (fallback 1457)
 const FALLBACK_PORT = 1457;
