@@ -557,12 +557,13 @@ async function cmdUsage(args) {
 async function cmdLogin(args) {
   const { runDeviceCodeLogin, runBrowserLogin } = await import("../scripts/lib/codex-oauth.mjs");
   const dataDir = dataDirAbs();
+  const lang = (readEnv().AGENT_LANGUAGE || "en").toLowerCase();
   const browser = args.includes("--browser");
   step(browser ? "OpenAI sign-in (browser)…" : "OpenAI sign-in (device code)…");
   try {
     const auth = browser
-      ? await runBrowserLogin({ dataDir, log: (m) => console.log(m) })
-      : await runDeviceCodeLogin({ dataDir, log: (m) => console.log(m) });
+      ? await runBrowserLogin({ dataDir, lang, log: (m) => console.log(m) })
+      : await runDeviceCodeLogin({ dataDir, lang, log: (m) => console.log(m) });
     ok(`Signed in${auth.planType ? ` — plan: ${auth.planType}` : ""}${auth.accountId ? ` · account ${auth.accountId}` : ""}`);
     console.log(`${C.d}Token stored: ${join(dataDir, "codex-auth.json")} (chmod 600)${C.x}`);
     if (readEnv().MODEL_PROVIDER !== "codex") warn("Set MODEL_PROVIDER=codex to use it: iva config (then iva restart)");

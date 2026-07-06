@@ -328,8 +328,8 @@ async function main() {
       while (!auth) {
         try {
           auth = useBrowser
-            ? await runBrowserLogin({ dataDir, log: (m) => console.log(m) })
-            : await runDeviceCodeLogin({ dataDir, log: (m) => console.log(m) });
+            ? await runBrowserLogin({ dataDir, lang: LANG, log: (m) => console.log(m) })
+            : await runDeviceCodeLogin({ dataDir, lang: LANG, log: (m) => console.log(m) });
           console.log(`  ${C.g}${t("signed in", "вход выполнен")}${auth.planType ? ` — ${t("plan", "план")}: ${auth.planType}` : ""}${C.x}`);
         } catch (e) {
           console.log(`  ${C.r}${t("sign-in failed", "не удалось войти")}: ${e.message}${C.x}`);

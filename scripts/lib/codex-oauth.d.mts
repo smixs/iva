@@ -12,6 +12,7 @@ export interface LoginOptions {
   dataDir?: string;
   log?: (msg: string) => void;
   open?: boolean;
+  lang?: string;
 }
 
 export const ISSUER: string;

@@ -27,6 +27,8 @@ const FALLBACK_PORT = 1457;
 
 const b64url = (buf) => Buffer.from(buf).toString("base64url");
 const defaultDir = () => process.env.ASSISTANT_DATA_DIR || "data";
+// Язык подсказок входа (en по умолчанию — как у codex CLI). Мастер/CLI прокидывают lang.
+const tr = (lang, en, ru) => (lang === "ru" ? ru : en);
 
 // ── хранилище токенов ─────────────────────────────────────────────────────
 export function authFilePath(dataDir = defaultDir()) {
@@ -169,7 +171,7 @@ export async function codexAuthHeaders(dataDir = defaultDir()) {
 }
 
 // ── device-code flow (headless-friendly, по ссылке) ────────────────────────
-export async function runDeviceCodeLogin({ dataDir = defaultDir(), log = console.log } = {}) {
+export async function runDeviceCodeLogin({ dataDir = defaultDir(), log = console.log, lang = "en" } = {}) {
   const api = `${ISSUER}/api/accounts`;
   const uc = await fetch(`${api}/deviceauth/usercode`, {
     method: "POST",
@@ -179,9 +181,9 @@ export async function runDeviceCodeLogin({ dataDir = defaultDir(), log = console
   if (!uc.ok) throw new Error(`device usercode failed: ${uc.status} ${(await uc.text()).slice(0, 200)}`);
   const { device_auth_id, user_code, interval } = await uc.json();
 
-  log(`\n  1. Открой в браузере (на любом устройстве):  ${ISSUER}/codex/device`);
-  log(`  2. Введи одноразовый код (живёт 15 минут):   ${user_code}\n`);
-  log("  Жду подтверждения…");
+  log(`\n  1. ${tr(lang, "Open this link in a browser (any device):", "Открой в браузере (на любом устройстве):")}  ${ISSUER}/codex/device`);
+  log(`  2. ${tr(lang, "Enter this one-time code (expires in 15 min):", "Введи одноразовый код (живёт 15 минут):")}   ${user_code}\n`);
+  log(`  ${tr(lang, "Waiting for confirmation…", "Жду подтверждения…")}`);
 
   const pollMs = Math.max(Number(interval) || 5, 1) * 1000;
   const deadline = Date.now() + 15 * 60 * 1000;
@@ -222,7 +224,7 @@ function openBrowser(url) {
   }
 }
 
-export async function runBrowserLogin({ dataDir = defaultDir(), log = console.log, open = true } = {}) {
+export async function runBrowserLogin({ dataDir = defaultDir(), log = console.log, open = true, lang = "en" } = {}) {
   const { verifier, challenge } = pkce();
   const state = b64url(randomBytes(32));
   const port = await listenFirstFree([DEVICE_PORT, FALLBACK_PORT]);
@@ -242,7 +244,7 @@ export async function runBrowserLogin({ dataDir = defaultDir(), log = console.lo
       originator: ORIGINATOR,
     }).toString();
 
-  log(`\n  Открой в браузере и войди в OpenAI:\n  ${authorizeUrl}\n`);
+  log(`\n  ${tr(lang, "Open this in a browser and sign in to OpenAI:", "Открой в браузере и войди в OpenAI:")}\n  ${authorizeUrl}\n`);
   if (open) openBrowser(authorizeUrl);
 
   return new Promise((resolve, reject) => {
@@ -268,12 +270,12 @@ export async function runBrowserLogin({ dataDir = defaultDir(), log = console.lo
         if (!code) throw new Error("missing authorization code");
         const auth = toAuth(await exchangeCode({ code, verifier, redirectUri }));
         writeAuth(auth, dataDir);
-        done(200, "Готово — вход выполнен. Можно закрыть вкладку и вернуться в терминал.");
+        done(200, tr(lang, "Signed in — you can close this tab and return to the terminal.", "Готово — вход выполнен. Можно закрыть вкладку и вернуться в терминал."));
         clearTimeout(timer);
         port.server.close();
         resolve(auth);
       } catch (e) {
-        done(400, `Ошибка входа: ${e.message}`);
+        done(400, `${tr(lang, "Sign-in error", "Ошибка входа")}: ${e.message}`);
         clearTimeout(timer);
         port.server.close();
         reject(e);
@@ -300,13 +302,42 @@ export async function login(mode = "device", opts = {}) {
 }
 
 // ── список моделей подписки (для мастера) ──────────────────────────────────
+// Форма ответа (codex protocol): { models: [ { model: "gpt-5.1", id, display_name, ... } ] }.
+// Идентификатор для запроса — поле `model` (slug), НЕ `id` (id пресета). Берём его, с фолбэками.
+// Сортируем «новые сверху» (gpt-5.5 > gpt-5.1 > gpt-5). При 0 распознанных — бросаем ошибку
+// с сырым телом, чтобы мастер показал реальную форму ответа (а не молча свалился в ручной ввод).
 export async function listCodexModels({ dataDir = defaultDir() } = {}) {
   const headers = await codexAuthHeaders(dataDir);
   const res = await fetch(`${CODEX_BASE_URL}/models?client_version=${CLIENT_VERSION}`, { headers });
-  if (!res.ok) throw new Error(`list models failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`list models failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
   const json = await res.json();
-  const arr = Array.isArray(json) ? json : json.data || json.models || [];
-  return arr.map((m) => (typeof m === "string" ? m : m.id || m.slug || m.name)).filter(Boolean);
+  const arr = Array.isArray(json) ? json : json.models || json.data || json.model_presets || [];
+  let slugs = arr.map((m) => (typeof m === "string" ? m : m?.model || m?.slug || m?.id || m?.name)).filter(Boolean);
+  // Форма ответа могла измениться — рекурсивно ищем любой вложенный массив моделей.
+  if (!slugs.length) slugs = deepFindModels(json);
+  const uniq = [...new Set(slugs)];
+  if (!uniq.length) throw new Error(`models endpoint returned no usable models — raw: ${JSON.stringify(json).slice(0, 500)}`);
+  return uniq.sort(compareModelDesc);
+}
+
+// Рекурсивно собирает slug'и из любого вложенного массива объектов с полем model/slug
+// (устойчиво к смене ключа-обёртки в ответе бэкенда).
+function deepFindModels(node, out = []) {
+  if (Array.isArray(node)) {
+    for (const it of node) {
+      if (it && typeof it === "object" && (it.model || it.slug)) out.push(it.model || it.slug);
+      else deepFindModels(it, out);
+    }
+  } else if (node && typeof node === "object") {
+    for (const k of Object.keys(node)) deepFindModels(node[k], out);
+  }
+  return out;
+}
+
+// «Новые сверху»: сравниваем числовую версию в slug (gpt-5.1 → 5.1), при равенстве — по имени.
+function compareModelDesc(a, b) {
+  const ver = (s) => parseFloat((String(s).match(/(\d+(?:\.\d+)?)/) || [])[1] || "0");
+  return ver(b) - ver(a) || String(a).localeCompare(String(b));
 }
 
 // ── self-check (node scripts/lib/codex-oauth.mjs) — без сети ────────────────
@@ -326,5 +357,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   assert(accountFromIdToken(jwt).accountId === "acc_1", "accountId");
   assert(accountFromIdToken(jwt).planType === "pro", "planType");
   assert(accountFromIdToken("garbage").accountId === null, "bad id_token → null");
+  // Разбор списка моделей: slug из поля `model`, сортировка «новые сверху».
+  const models = [{ model: "gpt-5" }, { model: "gpt-5.1" }, { id: "preset-x", model: "gpt-5.1-codex" }];
+  const parsed = [...new Set(models.map((m) => m.model || m.slug || m.id || m.name).filter(Boolean))].sort(compareModelDesc);
+  assert(parsed[0].startsWith("gpt-5.1"), `newest first, got ${parsed[0]}`);
+  assert(parsed.includes("gpt-5"), "keeps gpt-5");
+  // deepFindModels: устойчивость к смене ключа-обёртки.
+  assert(deepFindModels({ result: { items: [{ model: "gpt-5.1" }, { slug: "gpt-6" }] } }).length === 2, "deepFindModels nested");
+  assert(deepFindModels({ tiers: [{ id: "flex" }] }).length === 0, "deepFind ignores non-model arrays");
+  assert(tr("ru", "en", "ру") === "ру" && tr("en", "en", "ру") === "en", "tr lang");
   console.log("codex-oauth self-check ok");
 }
