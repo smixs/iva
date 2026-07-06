@@ -8,18 +8,32 @@ Iva runs on your server with your keys. Here is every external service it talks 
 |---|---|---|---|
 | **OpenCode Zen Go** | ~$5/mo | `deepseek-v4-pro` (default), `deepseek-v4-flash`, `kimi-k2.7-code`, `glm-5.2`, `qwen3.7` | `gemini-3-flash` |
 | **Ollama Cloud** | ~$20/mo | `deepseek-v4-pro` (default) | `gemma3:12b` |
+| **OpenAI (ChatGPT subscription)** | your existing Plus/Pro/Team | the models your plan exposes (`gpt-5.x`, `-codex`), fetched live | same subscription (multimodal) |
 
-From Iva's side the two are interchangeable:
+The first two are plain API keys; the third rides your personal OpenAI subscription:
 
-- 🔌 **OpenAI-compatible** — same wire format on both, so switching is one line in `.env`
-- 🌍 **Any IP** — both endpoints answer from any server location, no region blocks
+- 🔌 **OpenAI-compatible** — Zen and Ollama share the same wire format, so switching is one line in `.env`
+- 🌍 **Any IP** — all three answer from any server location, no region blocks
 - 💸 **No markup** — you pay the provider directly; Iva adds nothing on top
 
 ```bash
-MODEL_PROVIDER=opencode   # or ollama, then `iva restart`
+MODEL_PROVIDER=opencode   # or ollama / codex, then `iva restart`
 ```
 
 Start with Zen: a quarter of the price, five models to switch between. Keys, model pick and context-window settings live in [configuration.md](configuration.md).
+
+### OpenAI by ChatGPT subscription (`codex`)
+
+Use the OpenAI subscription you already pay for — no separate API key, no per-token bill. Iva signs in the same way the official `codex` CLI does (OAuth against `auth.openai.com`), stores a refreshable token in `data/codex-auth.json` (chmod 600), and calls the subscription's Responses backend directly. The access token is refreshed automatically before it expires.
+
+```bash
+iva login              # device code: opens a link + one-time code (works on a headless VPS)
+iva login --browser    # PKCE flow: opens a browser on this machine
+iva config             # pick the provider (option 3) and a model from your plan's live list
+iva restart
+```
+
+Notes: the model list is pulled from your subscription at setup time, so you always see exactly what your plan allows. Set `CODEX_CONTEXT_WINDOW` to the real window of the model you picked (compaction derives its threshold from it). Routing a self-hosted assistant through the ChatGPT subscription backend is a grey area under OpenAI's terms — you are using your own subscription on your own server, but weigh that yourself.
 
 ## Vision
 

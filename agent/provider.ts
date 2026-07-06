@@ -1,10 +1,13 @@
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { CODEX_BASE_URL, codexAuthHeaders } from "../scripts/lib/codex-oauth.mjs";
 
 type WrappableModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
 // Единый источник конфигурации провайдера модели (выбор раз при старте через MODEL_PROVIDER).
-// Обе площадки OpenAI-совместимы; ключи — из .env. Здесь же зашита vision-модель ТОГО ЖЕ
-// провайдера (один ключ, без доп-подписок) — её зовёт agent/vision.ts для распознавания картинок.
+// ollama/opencode — OpenAI-совместимы (chat/completions, статичный ключ из .env).
+// codex — личная подписка OpenAI (ChatGPT): Responses API + OAuth-токен (data/codex-auth.json,
+// `iva login`). Здесь же зашита vision-модель провайдера — её зовёт agent/vision.ts.
 const PROVIDER = process.env.MODEL_PROVIDER ?? "ollama";
 
 const PROVIDERS = {
@@ -24,10 +27,45 @@ const PROVIDERS = {
     contextWindow: Number(process.env.OPENCODE_CONTEXT_WINDOW ?? 131072),
     visionModel: "gemini-3-flash",
   },
+  codex: {
+    baseURL: CODEX_BASE_URL,
+    apiKey: undefined, // авторизация — OAuth-токен подписки, не статичный ключ (см. codexFetch)
+    textModel: process.env.CODEX_MODEL ?? "gpt-5.1",
+    contextWindow: Number(process.env.CODEX_CONTEXT_WINDOW ?? 272000),
+    // gpt-5* мультимодальны — картинки идут через ту же подписку (см. agent/vision.ts).
+    visionModel: process.env.CODEX_MODEL ?? "gpt-5.1",
+  },
 } as const;
 
 export const providerName = PROVIDER;
 export const providerConfig = PROVIDERS[PROVIDER as keyof typeof PROVIDERS] ?? PROVIDERS.ollama;
+
+// --- Codex (подписка ChatGPT): Responses API через @ai-sdk/openai ----------------------------
+// Кастомный fetch: перед КАЖДЫМ запросом подставляет свежий Bearer + ChatGPT-Account-ID
+// (getAccessToken рефрешит истёкший токен) и форсит store:false — бэкенд подписки stateless,
+// историю eve шлёт целиком каждый ход. Тело патчим здесь же (точка правки, если бэкенд строже).
+const codexFetch: typeof fetch = async (input, init) => {
+  const headers = new Headers(init?.headers);
+  for (const [k, v] of Object.entries(await codexAuthHeaders())) headers.set(k, v);
+  let body = init?.body;
+  if (typeof body === "string" && String((input as Request).url ?? input).endsWith("/responses")) {
+    try {
+      const j = JSON.parse(body);
+      j.store = false;
+      delete j.previous_response_id;
+      body = JSON.stringify(j);
+    } catch {
+      /* не JSON — не трогаем */
+    }
+  }
+  return fetch(input, { ...init, headers, body });
+};
+
+/** Строит Codex-модель (Responses API подписки). Общая для agent.ts и vision.ts. */
+export function makeCodexModel(model: string = providerConfig.textModel) {
+  const openai = createOpenAI({ baseURL: CODEX_BASE_URL, apiKey: "chatgpt-subscription", fetch: codexFetch });
+  return openai.responses(model);
+}
 
 // --- Анти-InvalidPrompt: срезаем reasoning из вывода модели ---------------------------------
 // deepseek (openai-compatible) иногда отдаёт reasoning-часть без поля `text`. eve хранит reasoning

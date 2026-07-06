@@ -4,15 +4,21 @@
 // the script will NOT exit until every required secret is entered.
 // No external dependencies.
 import { createInterface } from "node:readline/promises";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { readFile, writeFile, access } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { defaultChecker, PortSelector } from "./lib/ports.mjs";
+import { authFilePath, readAuth, runDeviceCodeLogin, runBrowserLogin, listCodexModels } from "./lib/codex-oauth.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = join(ROOT, ".env");
+// Абсолютный каталог data (тот же, что видит агент из cwd=ROOT). Хранит codex-auth.json (OAuth).
+const dataDirAbs = (env) => {
+  const d = (env && env.ASSISTANT_DATA_DIR) || "data";
+  return d.startsWith("/") ? d : join(ROOT, d);
+};
 const OLLAMA_BASE = "https://ollama.com/v1";
 const OPENCODE_BASE = "https://opencode.ai/zen/go/v1";
 // OpenCode Go models — bare ID without the "opencode-go/" prefix: that's exactly what the
@@ -127,6 +133,7 @@ async function writeEnv(out) {
     "MODEL_PROVIDER",
     "OLLAMA_API_KEY", "OLLAMA_MODEL", "OLLAMA_CONTEXT_WINDOW",
     "OPENCODE_API_KEY", "OPENCODE_MODEL", "OPENCODE_CONTEXT_WINDOW",
+    "CODEX_MODEL", "CODEX_CONTEXT_WINDOW",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_USERNAME", "TELEGRAM_WEBHOOK_SECRET_TOKEN",
     "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_DIGEST_CHAT_ID",
     "DEEPGRAM_API_KEY", "DEEPGRAM_LANGUAGE",
@@ -236,10 +243,13 @@ async function main() {
 
   // Already configured? Don't walk every step — ask once.
   const prov0 = existing.MODEL_PROVIDER || "ollama";
-  const provKey = prov0 === "opencode" ? "OPENCODE_API_KEY" : "OLLAMA_API_KEY";
-  const provModel = prov0 === "opencode" ? "OPENCODE_MODEL" : "OLLAMA_MODEL";
-  const REQUIRED = [provKey, provModel, "DEEPGRAM_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS"];
-  const isComplete = REQUIRED.every((k) => (existing[k] || "").trim());
+  const provModel = { opencode: "OPENCODE_MODEL", codex: "CODEX_MODEL" }[prov0] || "OLLAMA_MODEL";
+  // codex — доступ по OAuth-токену (data/codex-auth.json), у ollama/opencode — API-ключ в .env.
+  // ollama задан явно: `null ?? default` вернул бы ключ и для codex (null нуллиш) → мастер зацикливался бы.
+  const provKey = { ollama: "OLLAMA_API_KEY", opencode: "OPENCODE_API_KEY", codex: null }[prov0];
+  const REQUIRED = [provModel, "DEEPGRAM_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", ...(provKey ? [provKey] : [])];
+  const loggedInCodex = prov0 !== "codex" || existsSync(authFilePath(dataDirAbs(existing)));
+  const isComplete = loggedInCodex && REQUIRED.every((k) => (existing[k] || "").trim());
   if (isComplete) {
     console.log(`\n${C.b}${C.g}  ${t("Iva is already configured:", "Iva уже настроена:")}${C.x}`);
     console.log(`  • ${t("Provider", "Провайдер")}: ${prov0}`);
@@ -265,8 +275,10 @@ async function main() {
   console.log(`  ${t("Who to reach the model through:", "Через кого ходить к модели:")}`);
   console.log(`    1) Ollama Cloud — ${C.c}https://ollama.com${C.x} ${t("(~$20/mo, higher limits)", "(~$20/мес, лимиты побольше)")}`);
   console.log(`    2) OpenCode Zen — ${C.c}https://opencode.ai${C.x} ${t("(Go ~$5/mo, cheaper)", "(Go ~$5/мес, дешевле)")}`);
-  const provChoice = await ask(`  ${t("Provider", "Провайдер")} (1/2)`, prov0 === "opencode" ? "2" : "1");
-  const provider = provChoice.trim() === "2" ? "opencode" : "ollama";
+  console.log(`    3) OpenAI ${t("(ChatGPT subscription)", "(подписка ChatGPT)")} — ${C.c}chatgpt.com${C.x} ${t("(sign in, no API key)", "(вход по подписке, без API-ключа)")}`);
+  const provDef = { opencode: "2", codex: "3" }[prov0] || "1";
+  const provChoice = (await ask(`  ${t("Provider", "Провайдер")} (1/2/3)`, provDef)).trim();
+  const provider = provChoice === "2" ? "opencode" : provChoice === "3" ? "codex" : "ollama";
   out.MODEL_PROVIDER = provider;
 
   if (provider === "ollama") {
@@ -289,7 +301,7 @@ async function main() {
     out.OLLAMA_MODEL = await pickFromList(models, out.OLLAMA_MODEL, "deepseek-v4-pro");
     out.OLLAMA_CONTEXT_WINDOW = out.OLLAMA_CONTEXT_WINDOW || "131072";
     console.log(`  → ${t("model", "модель")}: ${C.g}${out.OLLAMA_MODEL}${C.x}`);
-  } else {
+  } else if (provider === "opencode") {
     console.log(`\n  ${t("OpenCode key", "Ключ OpenCode")}: ${C.c}https://opencode.ai/auth${C.x} ${t("(subscribe to Go → copy the API key).", "(подпишитесь на Go → скопируйте API key).")}`);
     out.OPENCODE_API_KEY = await askRequired(`  ${t("Paste the OpenCode API key", "Вставьте OpenCode API key")}`, {
       existing: process.env.OPENCODE_API_KEY || existing.OPENCODE_API_KEY || "",
@@ -301,6 +313,47 @@ async function main() {
     out.OPENCODE_MODEL = await pickFromList(OPENCODE_MODELS, curModel, OPENCODE_MODELS[0]);
     out.OPENCODE_CONTEXT_WINDOW = out.OPENCODE_CONTEXT_WINDOW || "131072";
     console.log(`  → ${t("model", "модель")}: ${C.g}${out.OPENCODE_MODEL}${C.x}`);
+  } else {
+    // codex — вход по подписке OpenAI (OAuth), без API-ключа. Токен → data/codex-auth.json.
+    const dataDir = dataDirAbs({ ...existing, ...out });
+    let auth = readAuth(dataDir);
+    if (auth) {
+      console.log(`\n  ${C.g}${t("Already signed in", "Вход уже выполнен")}${auth.planType ? ` (${t("plan", "план")}: ${auth.planType})` : ""}.${C.x} ${t("Re-login: iva login", "Перелогиниться: iva login")}`);
+    } else {
+      console.log(`\n  ${t("Sign in to your OpenAI (ChatGPT) subscription. No API key — auth like the codex CLI.", "Вход по подписке OpenAI (ChatGPT). Без API-ключа — авторизация как у codex CLI.")}`);
+      const useBrowser = await askYesNo(
+        `  ${t("Sign in via a browser on THIS machine? (No = by link + code, best for a headless VPS)", "Войти через браузер на ЭТОЙ машине? (Нет = по ссылке и коду, для headless-VPS)")}`,
+        false,
+      );
+      while (!auth) {
+        try {
+          auth = useBrowser
+            ? await runBrowserLogin({ dataDir, log: (m) => console.log(m) })
+            : await runDeviceCodeLogin({ dataDir, log: (m) => console.log(m) });
+          console.log(`  ${C.g}${t("signed in", "вход выполнен")}${auth.planType ? ` — ${t("plan", "план")}: ${auth.planType}` : ""}${C.x}`);
+        } catch (e) {
+          console.log(`  ${C.r}${t("sign-in failed", "не удалось войти")}: ${e.message}${C.x}`);
+          if (!(await askYesNo(`  ${t("Try again?", "Попробовать снова?")}`, true))) break;
+        }
+      }
+    }
+    // Список моделей подписки — тянем с бэкенда (как ollama/opencode). Fallback — ручной ввод.
+    let models = [];
+    if (auth) {
+      try {
+        models = await listCodexModels({ dataDir });
+      } catch (e) {
+        console.log(`  ${C.y}${t("couldn't fetch the model list", "не смог получить список моделей")}: ${e.message}${C.x}`);
+      }
+    }
+    if (models.length) {
+      console.log(`\n  ${t("Models available", "Доступно моделей")}: ${models.length}.`);
+      out.CODEX_MODEL = await pickFromList(models, out.CODEX_MODEL || "", models[0]);
+    } else {
+      out.CODEX_MODEL = await ask(`  ${t("Codex model id", "ID модели Codex")}`, out.CODEX_MODEL || "gpt-5.1");
+    }
+    out.CODEX_CONTEXT_WINDOW = out.CODEX_CONTEXT_WINDOW || "272000";
+    console.log(`  → ${t("model", "модель")}: ${C.g}${out.CODEX_MODEL}${C.x}`);
   }
   console.log(
     `  ${C.y}${t("Don't inflate the context window:", "Окно контекста не завышайте:")}${C.x} ${t("compaction computes its threshold from it; an inflated window risks overflow.", "компактация считает порог от него; завышенное окно = риск переполнения.")}`,
@@ -457,7 +510,7 @@ async function main() {
   // ── Write .env ────────────────────────────────────────────────────
   await writeEnv(out);
 
-  const chosenModel = provider === "opencode" ? out.OPENCODE_MODEL : out.OLLAMA_MODEL;
+  const chosenModel = { opencode: out.OPENCODE_MODEL, codex: out.CODEX_MODEL }[provider] || out.OLLAMA_MODEL;
   console.log();
   hr();
   console.log(`${C.g}${C.b}  ✓ ${t("Done — everything written to .env", "Готово — всё записано в .env")}${C.x}`);

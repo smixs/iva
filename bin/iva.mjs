@@ -58,6 +58,13 @@ function readEnv() {
   return env;
 }
 
+// Абсолютный путь к каталогу data (тот же, что видит агент из cwd=ROOT). Абсолютный
+// ASSISTANT_DATA_DIR берём как есть, относительный — от ROOT (как vault-путь ниже).
+function dataDirAbs(env = readEnv()) {
+  const d = env.ASSISTANT_DATA_DIR || "data";
+  return d.startsWith("/") ? d : join(ROOT, d);
+}
+
 async function confirm(question, def = false) {
   if (!process.stdin.isTTY) return def;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -347,14 +354,15 @@ function cmdDoctor() {
   if (!existsSync(ENV_PATH)) (bad(".env missing — run: iva config"), badN++);
   else {
     const prov = env.MODEL_PROVIDER || "ollama";
-    const REQUIRED = [
-      prov === "opencode" ? "OPENCODE_API_KEY" : "OLLAMA_API_KEY",
-      prov === "opencode" ? "OPENCODE_MODEL" : "OLLAMA_MODEL",
-      "DEEPGRAM_API_KEY",
-      "TELEGRAM_BOT_TOKEN",
-      "TELEGRAM_ALLOWED_USER_IDS",
-    ];
+    // codex — доступ по OAuth-токену (data/codex-auth.json), у ollama/opencode — API-ключ в .env.
+    const PROV_KEYS = {
+      ollama: ["OLLAMA_API_KEY", "OLLAMA_MODEL"],
+      opencode: ["OPENCODE_API_KEY", "OPENCODE_MODEL"],
+      codex: ["CODEX_MODEL"],
+    };
+    const REQUIRED = [...(PROV_KEYS[prov] || PROV_KEYS.ollama), "DEEPGRAM_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS"];
     const missing = REQUIRED.filter((k) => !(env[k] || "").trim());
+    if (prov === "codex" && !existsSync(join(dataDirAbs(env), "codex-auth.json"))) missing.push("OpenAI sign-in (iva login)");
     if (!missing.length) (ok(`.env filled in (provider: ${prov})`), okN++);
     else (bad(`.env incomplete, missing: ${missing.join(", ")} — run: iva config`), badN++);
     // old .env without IVA_PORT (or with :3000) — migrate right here
@@ -544,6 +552,26 @@ async function cmdUsage(args) {
   console.log(formatUsageReport(agg));
 }
 
+// OpenAI subscription (ChatGPT) login — device code by default, --browser for the PKCE flow.
+// Writes an OAuth token to data/codex-auth.json (0600); used when MODEL_PROVIDER=codex.
+async function cmdLogin(args) {
+  const { runDeviceCodeLogin, runBrowserLogin } = await import("../scripts/lib/codex-oauth.mjs");
+  const dataDir = dataDirAbs();
+  const browser = args.includes("--browser");
+  step(browser ? "OpenAI sign-in (browser)…" : "OpenAI sign-in (device code)…");
+  try {
+    const auth = browser
+      ? await runBrowserLogin({ dataDir, log: (m) => console.log(m) })
+      : await runDeviceCodeLogin({ dataDir, log: (m) => console.log(m) });
+    ok(`Signed in${auth.planType ? ` — plan: ${auth.planType}` : ""}${auth.accountId ? ` · account ${auth.accountId}` : ""}`);
+    console.log(`${C.d}Token stored: ${join(dataDir, "codex-auth.json")} (chmod 600)${C.x}`);
+    if (readEnv().MODEL_PROVIDER !== "codex") warn("Set MODEL_PROVIDER=codex to use it: iva config (then iva restart)");
+  } catch (e) {
+    bad(`Sign-in failed: ${e.message}`);
+    process.exit(1);
+  }
+}
+
 function cmdHelp() {
   console.log(`
 ${C.b}Iva CLI${C.x} — manage your personal agent
@@ -551,6 +579,7 @@ ${C.b}Iva CLI${C.x} — manage your personal agent
 ${C.b}Commands:${C.x}
   ${C.c}iva update${C.x}         update: git pull + build + restart
   ${C.c}iva config${C.x}         configure: model, Telegram, Deepgram, TZ, vault
+  ${C.c}iva login${C.x} [--browser]  sign in to an OpenAI subscription (ChatGPT) for MODEL_PROVIDER=codex
   ${C.c}iva doctor${C.x}         diagnose and safely auto-repair the install
   ${C.c}iva status${C.x}         status of services and memory timers
   ${C.c}iva restart${C.x}        restart the agent and Telegram bridge
@@ -570,6 +599,7 @@ const [, , cmd, ...rest] = process.argv;
 const cmds = {
   update: cmdUpdate,
   config: cmdConfig,
+  login: cmdLogin,
   doctor: cmdDoctor,
   status: cmdStatus,
   restart: cmdRestart,

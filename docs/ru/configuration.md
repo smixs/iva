@@ -15,17 +15,21 @@ iva restart
 
 ## Провайдер модели
 
-Два провайдера, оба совместимы с OpenAI. Выберите один через `MODEL_PROVIDER` и заполните только его блок. Цены и полные списки моделей: [providers.md](../providers.md).
+Три провайдера. Выберите один через `MODEL_PROVIDER` и заполните только его блок. `ollama`/`opencode` — API-ключ (OpenAI-совместимы); `codex` — личная подписка OpenAI (ChatGPT) по OAuth, без ключа. Цены и полные списки моделей: [providers.md](../providers.md).
 
 | Переменная | По умолчанию | Заметки |
 |---|---|---|
-| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud) или `opencode` (OpenCode Zen). |
+| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud), `opencode` (OpenCode Zen) или `codex` (подписка OpenAI ChatGPT). |
 | `OLLAMA_API_KEY` | — | Ключ с ollama.com. |
 | `OLLAMA_MODEL` | `deepseek-v4-pro` | Любая модель вашего тарифа Ollama Cloud. |
 | `OLLAMA_CONTEXT_WINDOW` | `131072` | См. предупреждение ниже. |
 | `OPENCODE_API_KEY` | — | Ключ с opencode.ai/auth. |
 | `OPENCODE_MODEL` | `opencode-go/deepseek-v4-pro` | Любая модель Zen Go. |
 | `OPENCODE_CONTEXT_WINDOW` | `131072` | То же предупреждение. |
+| `CODEX_MODEL` | `gpt-5.1` | Модель вашего тарифа OpenAI. `iva config` покажет реальный список подписки. |
+| `CODEX_CONTEXT_WINDOW` | `272000` | То же предупреждение — впишите реальное окно выбранной модели. |
+
+Для `codex` ключа в `.env` нет: выполните `iva login` (по ссылке+коду, годится для headless-VPS) или `iva login --browser`. OAuth-токен лежит в `data/codex-auth.json` (chmod 600, в gitignore) и автоматически обновляется до истечения. Полный сценарий: [providers.md](../providers.md#openai-by-chatgpt-subscription-codex).
 
 **Не завышайте контекстное окно.** Сжатие истории срабатывает на 70% этого числа. Поставите больше реального окна модели — компактор включится слишком поздно: запрос переполнится раньше, чем история будет подрезана. Меняете модель — вписывайте её настоящее окно, а не круглое число побольше.
 

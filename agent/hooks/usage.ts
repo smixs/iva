@@ -14,9 +14,11 @@ import { appendUsage } from "../../scripts/lib/usage.mjs";
 const PROVIDER = process.env.MODEL_PROVIDER ?? "ollama";
 // Модель/провайдер не приходят в событие — берём из env (та же логика, что в agent/agent.ts).
 const MODEL =
-  PROVIDER === "opencode"
-    ? (process.env.OPENCODE_MODEL ?? "deepseek-v4-pro").replace(/^opencode-go\//, "")
-    : (process.env.OLLAMA_MODEL ?? "deepseek-v4-pro");
+  PROVIDER === "codex"
+    ? (process.env.CODEX_MODEL ?? "gpt-5.1")
+    : PROVIDER === "opencode"
+      ? (process.env.OPENCODE_MODEL ?? "deepseek-v4-pro").replace(/^opencode-go\//, "")
+      : (process.env.OLLAMA_MODEL ?? "deepseek-v4-pro");
 
 interface StepData {
   stepIndex: number;
