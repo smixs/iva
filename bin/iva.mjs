@@ -65,6 +65,21 @@ function dataDirAbs(env = readEnv()) {
   return d.startsWith("/") ? d : join(ROOT, d);
 }
 
+function writeEnvValues(updates) {
+  const existing = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
+  const seen = new Set();
+  const lines = existing.split("\n").map((line) => {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=.*$/);
+    if (!m || updates[m[1]] === undefined) return line;
+    seen.add(m[1]);
+    return `${m[1]}=${updates[m[1]]}`;
+  });
+  for (const [key, value] of Object.entries(updates)) {
+    if (!seen.has(key)) lines.push(`${key}=${value}`);
+  }
+  writeFileSync(ENV_PATH, lines.join("\n").replace(/\n*$/, "\n"), "utf8");
+}
+
 async function confirm(question, def = false) {
   if (!process.stdin.isTTY) return def;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -565,9 +580,22 @@ async function cmdLogin(args) {
     const auth = browser
       ? await runBrowserLogin({ dataDir, lang, log: (m) => console.log(m) })
       : await runDeviceCodeLogin({ dataDir, lang, log: (m) => console.log(m) });
-    ok(`Signed in${auth.planType ? ` — plan: ${auth.planType}` : ""}${auth.accountId ? ` · account ${auth.accountId}` : ""}`);
+    ok(`Signed in${auth.planType ? ` - plan: ${auth.planType}` : ""}${auth.accountId ? ` - account ${auth.accountId}` : ""}`);
     console.log(`${C.d}Token stored: ${join(dataDir, "codex-auth.json")} (chmod 600)${C.x}`);
-    if (readEnv().MODEL_PROVIDER !== "codex") warn("Set MODEL_PROVIDER=codex to use it: iva config (then iva restart)");
+    const env = readEnv();
+    writeEnvValues({
+      MODEL_PROVIDER: "codex",
+      CODEX_MODEL: env.CODEX_MODEL || "gpt-5.5",
+      CODEX_CONTEXT_WINDOW: env.CODEX_CONTEXT_WINDOW || "272000",
+    });
+    ok("MODEL_PROVIDER=codex saved");
+    if (hasSystemd()) {
+      step("Restarting services to use ChatGPT subscription...");
+      restartServices();
+      ok("Restarted: iva + telegram-poll");
+    } else {
+      warn("systemd unavailable - run `iva restart` after login");
+    }
   } catch (e) {
     bad(`Sign-in failed: ${e.message}`);
     process.exit(1);
@@ -581,7 +609,7 @@ ${C.b}Iva CLI${C.x} — manage your personal agent
 ${C.b}Commands:${C.x}
   ${C.c}iva update${C.x}         update: git pull + build + restart
   ${C.c}iva config${C.x}         configure: model, Telegram, Deepgram, TZ, vault
-  ${C.c}iva login${C.x} [--browser]  sign in to an OpenAI subscription (ChatGPT) for MODEL_PROVIDER=codex
+  ${C.c}iva login${C.x} [--browser]  sign in to ChatGPT, set MODEL_PROVIDER=codex, restart
   ${C.c}iva doctor${C.x}         diagnose and safely auto-repair the install
   ${C.c}iva status${C.x}         status of services and memory timers
   ${C.c}iva restart${C.x}        restart the agent and Telegram bridge
