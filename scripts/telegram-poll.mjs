@@ -35,6 +35,19 @@ const ALLOWED = new Set(
   (process.env.TELEGRAM_ALLOWED_USER_IDS ?? "").split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
 );
 
+// ── Опциональная привязка инстанса к одному топику форум-группы ──────────────
+// TELEGRAM_GROUP_ID + TELEGRAM_TOPIC_ID в .env. Не заданы — мост работает как раньше.
+// Сценарий: несколько личных инстансов iva в одной группе, у каждого свой топик.
+const GROUP_ID = (process.env.TELEGRAM_GROUP_ID ?? "").trim();
+const TOPIC_ID = (process.env.TELEGRAM_TOPIC_ID ?? "").trim();
+function topicGate(update) {
+  const msg = update.message ?? update.callback_query?.message;
+  const chat = msg?.chat;
+  if (!chat || chat.type === "private" || !GROUP_ID) return true;
+  if (String(chat.id) !== GROUP_ID) return false;          // чужая группа — молча мимо
+  return String(msg.message_thread_id ?? "") === TOPIC_ID;  // только свой топик
+}
+
 const HELP = [
   "Iva commands:",
   "/help — this list",
@@ -233,6 +246,12 @@ async function main() {
       continue;
     }
     for (const update of data.result || []) {
+      // Не наш топик/группа (опция TELEGRAM_TOPIC_ID) — подтверждаем offset и молча пропускаем.
+      if (!topicGate(update)) {
+        offset = update.update_id + 1;
+        await saveOffset(offset);
+        continue;
+      }
       // Control commands (/restart, /help, /new) — the bridge handles them itself, doesn't send to eve.
       if (await handleControl(update)) {
         offset = update.update_id + 1;

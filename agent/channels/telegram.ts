@@ -30,12 +30,20 @@ function isBotCommand(text: string, bot?: string): boolean {
   const target = m.groups?.target;
   return target === undefined ? true : bot !== undefined && target.toLowerCase() === bot.toLowerCase();
 }
+
+// Опциональная привязка инстанса к топику форум-группы (см. TELEGRAM_TOPIC_ID в .env).
+// Не задано — поведение не меняется (личный агент, как раньше).
+function isBoundTopic(msg: any): boolean {
+  const topicId = (process.env.TELEGRAM_TOPIC_ID ?? "").trim();
+  return topicId !== "" && String(msg.messageThreadId ?? "") === topicId;
+}
 function shouldDispatch(msg: any, bot?: string): boolean {
   if (msg.from?.isBot === true || msg.chat.type === "channel") return false;
   const text: string = msg.text || msg.caption || "";
   if (!(text.trim().length > 0 || msg.attachments.length > 0)) return false;
   return (
     msg.chat.type === "private" ||
+    isBoundTopic(msg) ||
     msg.replyToMessage?.from?.isBot === true ||
     isBotCommand(text, bot) ||
     (bot !== undefined && text.toLowerCase().includes(`@${bot.toLowerCase()}`))
@@ -51,6 +59,7 @@ function shouldDispatchMedia(msg: any, bot?: string): boolean {
   if (msg.chat.type === "private") return true;
   const caption: string = msg.caption || "";
   return (
+    isBoundTopic(msg) ||
     msg.replyToMessage?.from?.isBot === true ||
     isBotCommand(caption, bot) ||
     (bot !== undefined && caption.toLowerCase().includes(`@${bot.toLowerCase()}`))
