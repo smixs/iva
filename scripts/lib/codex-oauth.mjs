@@ -21,8 +21,10 @@ const TOKEN_URL = `${ISSUER}/oauth/token`;
 const SCOPE = "openid profile email offline_access";
 const ORIGINATOR = "codex_cli_rs";
 // Для ?client_version= у /models и User-Agent. ВАЖНО: /models гейтит список по версии —
-// слишком старая (напр. 0.20/0.42) → бэкенд отдаёт {"models":[]}. Держим на актуальном релизе codex.
-const CLIENT_VERSION = "0.142.5";
+// слишком старая (напр. 0.20/0.42) → бэкенд отдаёт {"models":[]}, а модель прячется, если её
+// minimal_client_version выше нашей (напр. gpt-5.6-* требуют ≥0.144.0). Держим на актуальном релизе
+// codex, иначе свежие модели не появятся в списке. Проверено: 0.144.0 отдаёт gpt-5.6-{sol,terra,luna}.
+const CLIENT_VERSION = "0.144.0";
 const REFRESH_SKEW_S = 300; // рефрешим за 5 мин до exp (как окно codex CLI)
 const DEVICE_PORT = 1455; // codex-совместимый redirect-порт (fallback 1457)
 const FALLBACK_PORT = 1457;
