@@ -34,6 +34,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 - 🧭 **Decision cards** — what you chose, when and why; old versions stay in a dated History.
 - ⏰ **Tasks & reminders** — priorities, due dates and a morning digest.
 - 🌐 **Web search** — four pluggable providers: Tavily, Exa, Parallel or Brave.
+- 📮 **Google Workspace** — Gmail, Calendar, Drive, Sheets and Docs from chat via the `gws` CLI; installed for you, with a guided key setup right in the conversation.
 - 🧩 **Skills & MCP** — drop one file to add a procedure or connect an MCP server; keys stay in `.env`.
 - 🛡️ **Safe to forward** — links, PDFs and other people's messages are screened before the model reads them.
 - 📊 **Token accounting** — every model step is logged; `/usage` reports it for free.

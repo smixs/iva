@@ -364,6 +364,21 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────
+# 5c. Google Workspace CLI (`gws`): Gmail / Calendar / Drive / Sheets / Docs
+# ─────────────────────────────────────────────────────────────────────────
+# Idempotent: `npm i -g …@latest` installs on a fresh box and upgrades on re-run
+# (install.sh doubles as the updater; `iva update` refreshes it too). Non-fatal —
+# Google-service tasks are optional. Binary lands in npm-global (already on PATH).
+# Auth is per-user and interactive — the bot walks the user through it in chat
+# (agent skill `google-workspace`); nothing to configure here.
+step "$(t "Installing the Google Workspace CLI (gws)…" "Ставлю Google Workspace CLI (gws)…")"
+if npm i -g @googleworkspace/cli@latest >/dev/null 2>&1 && command -v gws >/dev/null 2>&1; then
+  ok "$(t "gws ready — connect Google later: message the bot \"connect Google\"" "gws готов — Google подключишь позже: напиши боту «подключи Google»")"
+else
+  warn "$(t "couldn't install gws — Google-service tasks unavailable, everything else works (retry: npm i -g @googleworkspace/cli)" "не удалось поставить gws — задачи с Google-сервисами недоступны, остальное работает (повторить: npm i -g @googleworkspace/cli)")"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────
 # 6. Interactive setup (provider + model + Telegram + Deepgram + TZ + vault)
 #    Reads /dev/tty → works with `curl | bash` too. Without a terminal — defer it.
 # ─────────────────────────────────────────────────────────────────────────

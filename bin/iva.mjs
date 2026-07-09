@@ -318,6 +318,10 @@ async function cmdUpdate(args) {
     bad("Build failed — NOT restarting the service (the old build stays working)");
     process.exit(1);
   }
+  // Keep the Google Workspace CLI current alongside Iva (best-effort; Google tasks are optional).
+  step("Refreshing the Google Workspace CLI (gws)…");
+  if (cap(NPM, ["i", "-g", "@googleworkspace/cli@latest"]).code === 0) ok("gws up to date");
+  else warn("couldn't refresh gws (retry: npm i -g @googleworkspace/cli)");
   if (hasSystemd()) {
     step("Refreshing systemd units and restarting…");
     restartServices();

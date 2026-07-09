@@ -192,6 +192,37 @@ async function openrouterKeyCheck(key) {
 //   кривой слаг → 400 "not a valid model id";  битый ключ → 401;
 //   модель без tool-эндпоинта → 404 "No endpoints found that support tool use".
 // Не-200 → возвращаем строку → мастер зациклит ввод. Именно это ловит «принято, а агент молчит».
+// OpenRouter оборачивает upstream-ошибку провайдера: error.message = generic "Provider returned error",
+// а настоящая причина (напр. "not available in your region") лежит в error.metadata.raw как JSON-строка.
+// Разворачиваем её, иначе пользователь видит бессмысленную обёртку.
+export function openrouterErrReason(j, status) {
+  const err = j?.error || {};
+  let reason = err.message || `HTTP ${status}`;
+  let raw = err?.metadata?.raw;
+  if (raw != null) {
+    // raw бывает JSON-строкой (xAI) или уже объектом (OpenAI-стиль). Разбираем строку в объект.
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        /* raw — не JSON, оставляем строкой */
+      }
+    }
+    // Внутри raw.error может лежать строка (xAI) или объект {message,…} (OpenAI) — берём .message.
+    let inner;
+    if (raw && typeof raw === "object") {
+      const e = raw.error;
+      inner = (e && typeof e === "object" ? e.message : e) || raw.message;
+    } else {
+      inner = raw;
+    }
+    if (inner != null && String(inner).trim()) {
+      const prov = err?.metadata?.provider_name;
+      reason = prov ? `${String(inner)} (${prov})` : String(inner);
+    }
+  }
+  return reason;
+}
 async function openrouterModelCheck(key, model) {
   try {
     const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
@@ -207,11 +238,20 @@ async function openrouterModelCheck(key, model) {
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = j?.error?.message || `HTTP ${res.status}`;
-      return t(
-        `the model can't be used: ${msg}. Iva needs a chat model with tool/function calling — pick one on https://openrouter.ai/models (form vendor/model).`,
-        `модель не подходит: ${msg}. Iva нужна chat-модель с поддержкой инструментов (function calling) — выберите такую на https://openrouter.ai/models (вид vendor/model).`,
-      );
+      const reason = openrouterErrReason(j, res.status);
+      // Совет про function calling — только когда причина реально про инструменты; иначе он вводит
+      // в заблуждение (напр. региональная 403 от провайдера к tool calling отношения не имеет).
+      const toolIssue = /tool use|function call|no endpoints found that support tool/i.test(reason);
+      const hint = toolIssue
+        ? t(
+            "Iva needs a chat model with tool/function calling — pick one on https://openrouter.ai/models (form vendor/model).",
+            "Iva нужна chat-модель с поддержкой инструментов (function calling) — выберите такую на https://openrouter.ai/models (вид vendor/model).",
+          )
+        : t(
+            "pick another model on https://openrouter.ai/models (form vendor/model).",
+            "выберите другую модель на https://openrouter.ai/models (вид vendor/model).",
+          );
+      return t(`the model can't be used: ${reason}. ${hint}`, `модель не подходит: ${reason}. ${hint}`);
     }
     // 200 = ключ+слаг+tools ок. «Ответила» = есть content ИЛИ tool_calls (модель могла сразу дёрнуть tool).
     const msg = j?.choices?.[0]?.message;

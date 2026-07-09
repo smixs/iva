@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] - 2026-07-09
+
+Feature: Iva now works with Google Workspace out of the box, and picking a model on OpenRouter tells you what actually went wrong.
+
+- 📮 **Google Workspace from chat** — Gmail, Calendar, Drive, Sheets and Docs are now first-class. The installer sets up the [`gws`](https://github.com/googleworkspace/cli) CLI for you (idempotently — a re-run or `iva update` keeps it current), the agent routes any Google task through it with structured JSON, and when it isn't connected yet Iva walks you through registering the key step by step, right in the conversation — no console spelunking on your own.
+- 🩹 **OpenRouter errors that tell the truth** — the setup wizard used to reject a perfectly good model with a misleading "needs tool/function calling". It now unwraps the real upstream reason (e.g. "this model isn't available in your region") from OpenRouter's error envelope — handling both string and nested-object shapes — and only mentions function calling when that's genuinely the problem.
+
+[0.3.0]: https://github.com/smixs/iva/releases/tag/v0.3.0
+
 ## [0.2.0] - 2026-07-04
 
 Feature: memory that finds things by meaning and keeps facts current, plus deterministic hardening against prompt injection and secret leaks.
