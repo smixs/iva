@@ -197,18 +197,29 @@ async function openrouterKeyCheck(key) {
 // Разворачиваем её, иначе пользователь видит бессмысленную обёртку.
 export function openrouterErrReason(j, status) {
   const err = j?.error || {};
-  const raw = err?.metadata?.raw;
   let reason = err.message || `HTTP ${status}`;
-  if (raw) {
-    let inner = raw;
-    try {
-      const p = JSON.parse(raw);
-      inner = p?.error || p?.message || raw;
-    } catch {
-      /* raw — не JSON, берём как есть */
+  let raw = err?.metadata?.raw;
+  if (raw != null) {
+    // raw бывает JSON-строкой (xAI) или уже объектом (OpenAI-стиль). Разбираем строку в объект.
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        /* raw — не JSON, оставляем строкой */
+      }
     }
-    const prov = err?.metadata?.provider_name;
-    reason = prov ? `${String(inner)} (${prov})` : String(inner);
+    // Внутри raw.error может лежать строка (xAI) или объект {message,…} (OpenAI) — берём .message.
+    let inner;
+    if (raw && typeof raw === "object") {
+      const e = raw.error;
+      inner = (e && typeof e === "object" ? e.message : e) || raw.message;
+    } else {
+      inner = raw;
+    }
+    if (inner != null && String(inner).trim()) {
+      const prov = err?.metadata?.provider_name;
+      reason = prov ? `${String(inner)} (${prov})` : String(inner);
+    }
   }
   return reason;
 }
