@@ -64,6 +64,15 @@ const codexFetch: typeof fetch = async (input, init) => {
       const j = JSON.parse(body);
       j.store = false;
       delete j.previous_response_id;
+      // store:false → бэкенд ничего не персистит, поэтому любой server-side id в input — это эхо
+      // прошлого ответа, которого на сервере уже нет: item_reference (ссылка без контента) и даже
+      // echoed id у инлайн-item ловят "Item '<id>' not found. Items are not persisted...".
+      // Контент истории уже инлайнится целиком (store:false задан на этапе сборки тела, см.
+      // forceStoreFalse), поэтому ссылки режем, а id-эхо у остальных item'ов вычищаем.
+      if (Array.isArray(j.input)) {
+        j.input = j.input.filter((it: unknown) => (it as { type?: string })?.type !== "item_reference");
+        for (const it of j.input) if (it && typeof it === "object") delete (it as { id?: unknown }).id;
+      }
       body = JSON.stringify(j);
     } catch {
       /* не JSON — не трогаем */
@@ -72,10 +81,27 @@ const codexFetch: typeof fetch = async (input, init) => {
   return fetch(input, { ...init, headers, body });
 };
 
+// Форсит store:false на этапе СБОРКИ тела (не пост-фактум в codexFetch). Без этого @ai-sdk/openai
+// берёт store:true по умолчанию и реплеит прошлые ответы ассистента как item_reference (голая
+// ссылка на msg_-item, без контента); codexFetch затем ставит store:false — и stateless-бэкенд
+// подписки не находит item → сессия падает со второго запроса ("Item ... not found. Items are not
+// persisted when store is set to false"). store:false заставляет SDK инлайнить историю целиком.
+const forceStoreFalse: LanguageModelMiddleware = {
+  async transformParams({ params }) {
+    return {
+      ...params,
+      providerOptions: {
+        ...params.providerOptions,
+        openai: { ...params.providerOptions?.openai, store: false },
+      },
+    };
+  },
+};
+
 /** Строит Codex-модель (Responses API подписки). Общая для agent.ts и vision.ts. */
 export function makeCodexModel(model: string = providerConfig.textModel) {
   const openai = createOpenAI({ baseURL: CODEX_BASE_URL, apiKey: "chatgpt-subscription", fetch: codexFetch });
-  return openai.responses(model);
+  return wrapLanguageModel({ model: openai.responses(model), middleware: forceStoreFalse });
 }
 
 // --- Анти-InvalidPrompt: срезаем reasoning из вывода модели ---------------------------------
