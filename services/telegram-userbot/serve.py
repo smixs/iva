@@ -98,6 +98,12 @@ def main() -> None:
 
     register_onboarding_tools(mcp, client)
 
+    # Enforce the anti-ban safety guide as server behavior (FloodWait compliance,
+    # pacing, circuit-breaker) by wrapping the client's outbound methods in place.
+    from guardrails import install_guardrails
+
+    install_guardrails(client)
+
     import uvicorn
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
