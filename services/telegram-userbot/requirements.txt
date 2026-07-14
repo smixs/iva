@@ -1,0 +1,5 @@
+# Telegram userbot MCP proxy — pinned upstream + HTTP serving deps.
+# telethon, mcp[cli], qrcode, nest-asyncio arrive transitively from telegram-mcp.
+telegram-mcp @ git+https://github.com/chigwell/telegram-mcp@v3.2.0
+uvicorn>=0.30
+starlette>=0.37

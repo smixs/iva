@@ -13,6 +13,11 @@ dist
 *.tsbuildinfo
 data
 .claude
+# Telegram userbot proxy: локальный venv и файлы сессии (секреты аккаунта).
+services/telegram-userbot/.venv
+*.session
+*.session-journal
+
 # Живой vault памяти — отдельный приватный git-репо (личные данные).
 # Скелет хранится в vault-template/ (трекается); живой vault создаёт scripts/init-vault.mjs.
 /vault/
