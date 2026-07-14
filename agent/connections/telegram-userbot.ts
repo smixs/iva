@@ -6,8 +6,22 @@
 // Онбординг (QR-логин) и правила безопасности — в скилле telegram-userbot.
 // URL/токен модель НЕ видит: они на стороне рантайма.
 import { defineMcpClientConnection } from "eve/connections";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const port = process.env.TELEGRAM_MCP_PORT ?? "8724";
+
+// Токен пишет `iva userbot setup` в data/telegram-userbot.token (тот же файл читает прокси).
+// Читаем при КАЖДОМ вызове (getToken), а не на старте: iva не нужно перезапускать после
+// того, как агент поднял прокси и создал токен — Eve и так ретраит соединение.
+function proxyToken(): string {
+  if (process.env.TELEGRAM_MCP_TOKEN) return process.env.TELEGRAM_MCP_TOKEN;
+  try {
+    return readFileSync(join(process.cwd(), "data", "telegram-userbot.token"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
 
 export default defineMcpClientConnection({
   url: `http://127.0.0.1:${port}/mcp`,
@@ -16,6 +30,6 @@ export default defineMcpClientConnection({
     "и отправлять сообщения от его имени. Требует подключения аккаунта через QR " +
     "(скилл telegram-userbot). Соблюдай анти-бан правила из скилла.",
   auth: {
-    getToken: async () => ({ token: process.env.TELEGRAM_MCP_TOKEN ?? "" }),
+    getToken: async () => ({ token: proxyToken() }),
   },
 });

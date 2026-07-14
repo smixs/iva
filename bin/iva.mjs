@@ -5,7 +5,7 @@
 // SINGLE source of truth for systemd units (writeUnits): install.sh delegates here
 // (`iva _install-units`), and update/doctor reuse the same write.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,9 @@ const TIMERS = ["daily", "weekly", "monthly", "yearly", "doctor"].map((n) => `iv
 const SVC_USERBOT = "iva-telegram-userbot.service";
 const USERBOT_DIR = join(ROOT, "services/telegram-userbot");
 const VENV_PY = join(USERBOT_DIR, ".venv/bin/python");
+// Proxy bearer secret. A FILE (not .env) read at runtime by both the proxy and iva's
+// connection, so iva needn't restart after the agent sets the proxy up mid-chat.
+const TOKEN_FILE = join(ROOT, "data/telegram-userbot.token");
 
 // Uncommon default port: 3000/8000/8080 are typically taken on a VPS (docker, etc.).
 // Overridden by the IVA_PORT variable in .env; the default ASSISTANT_HOST depends on it too.
@@ -601,7 +604,7 @@ ${C.b}Commands:${C.x}
   ${C.c}iva reset${C.x}          full reset: clear stuck workflows and restart
   ${C.c}iva start${C.x} / ${C.c}stop${C.x}    start / stop
   ${C.c}iva usage${C.x} [win]      token usage (last|today|week|month|by-model|by-source|tail)
-  ${C.c}iva userbot${C.x} [setup|status|off]  personal-account userbot proxy (Telegram, opt-in)
+  ${C.c}iva userbot${C.x} [creds|setup|status|off]  personal-account userbot proxy (Telegram, opt-in)
   ${C.c}iva logs${C.x} [poll]     agent logs (or the Telegram bridge) -f
   ${C.c}iva uninstall${C.x}       remove units and the command (--purge — delete code+vault)
   ${C.c}iva version${C.x}         version and git commit
@@ -642,6 +645,29 @@ function ensureUserbotVenv() {
     throw new Error(`userbot: зависимости не импортируются — ${check.err.split("\n").pop() || "проверь requirements"}`);
 }
 
+// Update-or-append keys in .env (dedup). Used to write Telegram api_id/api_hash
+// without the agent hand-editing .env or leaking secrets through argv.
+function writeEnvVars(vars) {
+  let raw = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
+  for (const [k, v] of Object.entries(vars)) {
+    const line = `${k}=${v}`;
+    const re = new RegExp(`^\\s*${k}\\s*=.*$`, "m");
+    raw = re.test(raw) ? raw.replace(re, line) : raw.replace(/\n*$/, "\n") + line + "\n";
+  }
+  writeFileSync(ENV_PATH, raw);
+}
+
+// Generate the proxy bearer once, into a 0600 file both sides read at runtime.
+function ensureUserbotToken() {
+  if (existsSync(TOKEN_FILE)) return;
+  mkdirSync(dirname(TOKEN_FILE), { recursive: true });
+  writeFileSync(TOKEN_FILE, randomBytes(24).toString("hex"), { mode: 0o600 });
+  try {
+    chmodSync(TOKEN_FILE, 0o600);
+  } catch {}
+  ok("Сгенерировал токен прокси (data/telegram-userbot.token).");
+}
+
 // Restart the opt-in proxy onto fresh code/deps, but ONLY if it's already active
 // (never auto-start it for users who didn't opt in). Called from `iva update`.
 function restartUserbotIfActive() {
@@ -658,6 +684,29 @@ function restartUserbotIfActive() {
 
 function cmdUserbot(args) {
   const sub = args[0] || "status";
+  if (sub === "creds") {
+    // Read api_id + api_hash from STDIN (two lines) — keeps secrets out of argv/ps.
+    // Usage (agent): `iva userbot creds <<'CREDS'\n<api_id>\n<api_hash>\nCREDS`
+    let data = "";
+    try {
+      data = readFileSync(0, "utf8");
+    } catch {}
+    const [apiId, apiHash] = data
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!apiId || !apiHash) {
+      bad("stdin: жду две строки — api_id и api_hash (создай приложение на my.telegram.org)");
+      process.exit(1);
+    }
+    if (!/^\d+$/.test(apiId)) {
+      bad("api_id должен быть числом");
+      process.exit(1);
+    }
+    writeEnvVars({ TELEGRAM_API_ID: apiId, TELEGRAM_API_HASH: apiHash });
+    ok("Ключи Telegram записаны в .env. Теперь: iva userbot setup");
+    return;
+  }
   if (sub === "setup") {
     const env = readEnv();
     if (!env.TELEGRAM_API_ID || !env.TELEGRAM_API_HASH) {
@@ -665,17 +714,13 @@ function cmdUserbot(args) {
       bad("впиши оба ключа в .env и запусти снова: iva userbot setup");
       process.exit(1);
     }
-    // Auto-generate the local proxy bearer so a non-technical user needn't invent one.
-    if (!env.TELEGRAM_MCP_TOKEN) {
-      appendFileSync(ENV_PATH, `\nTELEGRAM_MCP_TOKEN=${randomBytes(24).toString("hex")}\n`);
-      ok("Сгенерировал TELEGRAM_MCP_TOKEN в .env.");
-    }
+    ensureUserbotToken(); // 0600 token file both the proxy and iva's connection read at runtime
     ensureUserbotVenv(); // throws → dispatch catches → exit 1, service NOT enabled
     writeUnits();
     sc("enable", SVC_USERBOT);
-    sc("restart", SVC_USERBOT); // restart (not just enable --now) so a rewritten unit / new .env load
-    // iva reads TELEGRAM_MCP_TOKEN/PORT at process start — restart so the new secret+URL are live.
-    if (scQ("is-active", "iva.service").out === "active") sc("restart", "iva.service");
+    sc("restart", SVC_USERBOT); // restart (not just enable --now) so a rewritten unit / new creds load
+    // NOTE: do NOT restart iva here — the agent runs this mid-chat, and iva reads the token
+    // from the file at call time, so no restart is needed (Eve retries the MCP connection).
     ok("Userbot-прокси включён. Подключи аккаунт по QR через бота: напиши боту «подключи мой телеграм».");
     ok("Статус: iva userbot status · выключить: iva userbot off");
     return;
@@ -689,6 +734,7 @@ function cmdUserbot(args) {
   const enabled = scQ("is-enabled", SVC_USERBOT).out || "-";
   console.log(`${SVC_USERBOT}: ${active} (${enabled})`);
   console.log(`venv: ${existsSync(VENV_PY) ? "собран" : "нет — будет собран при setup"}`);
+  console.log(`токен: ${existsSync(TOKEN_FILE) ? "есть" : "нет — создастся при setup"}`);
 }
 
 const [, , cmd, ...rest] = process.argv;

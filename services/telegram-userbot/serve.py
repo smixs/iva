@@ -45,6 +45,21 @@ def _session_file() -> Path:
     return base / "telegram-userbot.session"
 
 
+def _token_file() -> Path:
+    # Anchored at <iva_root>/data so iva's connection (cwd = iva root) and this proxy
+    # (cwd = services/telegram-userbot) resolve the SAME file: services/telegram-userbot/
+    # serve.py → parents[2] = iva root. `iva userbot setup` writes it (0600).
+    return Path(__file__).resolve().parents[2] / "data" / "telegram-userbot.token"
+
+
+def _resolve_token() -> str:
+    env = os.getenv("TELEGRAM_MCP_TOKEN")
+    if env:
+        return env.strip()
+    f = _token_file()
+    return f.read_text().strip() if f.exists() else ""
+
+
 def _seed_session_env() -> Path:
     """Point upstream at our SQLite session file (created empty if absent = onboarding).
 
@@ -76,9 +91,9 @@ def main() -> None:
 
     host = os.getenv("TELEGRAM_MCP_HOST", "127.0.0.1")
     port = int(os.getenv("TELEGRAM_MCP_PORT", "8724"))
-    token = os.getenv("TELEGRAM_MCP_TOKEN")
+    token = _resolve_token()
     if not token:
-        _fail("TELEGRAM_MCP_TOKEN is required")
+        _fail("no proxy token — run `iva userbot setup` (writes data/telegram-userbot.token)")
     if not os.getenv("TELEGRAM_API_ID") or not os.getenv("TELEGRAM_API_HASH"):
         _fail("TELEGRAM_API_ID and TELEGRAM_API_HASH are required (create an app at my.telegram.org)")
 

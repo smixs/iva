@@ -10,39 +10,26 @@ natively (`agent/connections/telegram-userbot.ts`).
 > before connecting and enforces anti-ban pacing, but the limits are per-account. Behave
 > like a human. See the enforced rules in `agent/skills/telegram-userbot/safety.md`.
 
-## One-time setup
+## Connect — just chat with the bot
 
-1. **Get API credentials.** Open <https://my.telegram.org> → **API development tools** →
-   create an app (any name, platform Desktop). Copy `api_id` and `api_hash`.
-2. **Put them in `.env`:**
-   ```
-   TELEGRAM_API_ID=1234567
-   TELEGRAM_API_HASH=abcdef0123456789abcdef0123456789
-   ```
-3. **Enable the proxy:**
-   ```bash
-   iva userbot setup
-   ```
-   This builds the Python venv (`uv`, or `python3 -m venv` as fallback), generates
-   `TELEGRAM_MCP_TOKEN`, writes + enables `iva-telegram-userbot.service`, and restarts iva.
+You never touch a terminal. Tell the bot **«подключи мой телеграм»** and it does everything
+for you, in chat:
 
-## Connect the account (QR, through the bot chat)
+1. It warns you (at your own risk) and, the first time, walks you through creating an app at
+   <https://my.telegram.org> → **API development tools** — you paste the `api_id` / `api_hash`
+   back into the chat. The agent provisions the proxy for you (builds its venv, starts the
+   service) via its host shell — no restart of iva needed.
+2. It renders a QR and sends it as an image into your chat. Scan it in the Telegram app of the
+   account you're connecting: **Settings → Devices → Link Desktop Device**.
+3. If you have 2FA, it asks for your password (change it afterward if you'd rather it not pass
+   through chat). Done — the session persists on the server, so this is one-time.
 
-Just tell the bot: **«подключи мой телеграм»**. Iva will:
-1. Call `qr_login_start` — the proxy renders a QR and sends it as an image straight into
-   your bot chat (the login token never leaves the box).
-2. Ask you to scan it: in the Telegram app of the account you're connecting →
-   **Settings → Devices → Link Desktop Device**.
-3. Poll `qr_login_status`. If you have 2FA, it asks for your password (passed to
-   `qr_login_password`) — change it afterward if you'd rather it not pass through chat.
-
-The session persists on the server (SQLite file session), so you only do this once.
-
-## Commands
+## Manual commands (optional — the agent runs these for you)
 
 ```bash
-iva userbot status   # is the proxy running? venv built?
-iva userbot setup    # (re)build venv, enable + start the proxy (idempotent)
+iva userbot creds    # read api_id + api_hash from stdin → .env (two lines)
+iva userbot setup    # build venv, generate the token, enable + start the proxy (idempotent)
+iva userbot status   # service running? venv built? token present?
 iva userbot off      # stop and disable the proxy
 ```
 
@@ -51,9 +38,11 @@ iva userbot off      # stop and disable the proxy
 - `TELEGRAM_EXPOSED_TOOLS=read-only` in `.env` — the agent can read/search but physically
   cannot send or mutate (the proxy prunes all write tools). Onboarding still works.
 - `TELEGRAM_MCP_PORT` (default `8724`), `TELEGRAM_USERBOT_QR_CHAT_ID` (defaults to the first
-  of `TELEGRAM_ALLOWED_USER_IDS`). Both iva and the proxy read the port from `.env` at start,
-  so after changing it rerun **`iva userbot setup`** (restarts both) — a bare `iva restart`
-  only reloads iva, leaving the proxy on the old port.
+  of `TELEGRAM_ALLOWED_USER_IDS`). The default needs no config. If you set a custom port,
+  run `iva userbot setup` (restarts the proxy) **and** `iva restart` (iva reads the port from
+  its env at start) so both agree.
+- The proxy bearer lives in `data/telegram-userbot.token` (0600), read at runtime by both the
+  proxy and iva — so the agent can provision the proxy mid-chat without restarting iva.
 
 ## How it works
 
