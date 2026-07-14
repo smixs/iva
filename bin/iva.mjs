@@ -5,7 +5,8 @@
 // SINGLE source of truth for systemd units (writeUnits): install.sh delegates here
 // (`iva _install-units`), and update/doctor reuse the same write.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, appendFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -22,6 +23,12 @@ const childEnv = { ...process.env, PATH: `${NODE_BIN_DIR}:${process.env.PATH || 
 
 const SERVICES = ["iva.service", "iva-telegram-poll.service"];
 const TIMERS = ["daily", "weekly", "monthly", "yearly", "doctor"].map((n) => `iva-memory-${n}.timer`);
+
+// Telegram userbot proxy — OPT-IN (not in SERVICES, so `iva update` never tries to start
+// it without API creds). Enabled explicitly via `iva userbot setup`.
+const SVC_USERBOT = "iva-telegram-userbot.service";
+const USERBOT_DIR = join(ROOT, "services/telegram-userbot");
+const VENV_PY = join(USERBOT_DIR, ".venv/bin/python");
 
 // Uncommon default port: 3000/8000/8080 are typically taken on a VPS (docker, etc.).
 // Overridden by the IVA_PORT variable in .env; the default ASSISTANT_HOST depends on it too.
@@ -133,7 +140,8 @@ function writeUnits() {
     if (!/^iva-.*\.(service|timer)$/.test(f)) continue;
     const tpl = readFileSync(join(deploy, f), "utf8")
       .replaceAll("__PROJECT_DIR__", ROOT)
-      .replaceAll("__NODE_BIN__", NODE);
+      .replaceAll("__NODE_BIN__", NODE)
+      .replaceAll("__PYTHON_BIN__", VENV_PY);
     writeFileSync(join(UNIT_DIR, f), tpl);
     written.push(f);
   }
@@ -592,6 +600,7 @@ ${C.b}Commands:${C.x}
   ${C.c}iva reset${C.x}          full reset: clear stuck workflows and restart
   ${C.c}iva start${C.x} / ${C.c}stop${C.x}    start / stop
   ${C.c}iva usage${C.x} [win]      token usage (last|today|week|month|by-model|by-source|tail)
+  ${C.c}iva userbot${C.x} [setup|status|off]  personal-account userbot proxy (Telegram, opt-in)
   ${C.c}iva logs${C.x} [poll]     agent logs (or the Telegram bridge) -f
   ${C.c}iva uninstall${C.x}       remove units and the command (--purge — delete code+vault)
   ${C.c}iva version${C.x}         version and git commit
@@ -601,9 +610,61 @@ ${C.b}Commands:${C.x}
 }
 
 // ── router ──────────────────────────────────────────────────────────────────
+// ── Telegram userbot (opt-in) ────────────────────────────────────────────
+function bootstrapUserbotVenv() {
+  step("Собираю venv для userbot-прокси (telethon, mcp)…");
+  const hasUv = !!cap("sh", ["-c", "command -v uv"]).out;
+  const opts = { cwd: USERBOT_DIR };
+  if (hasUv) {
+    run("uv", ["venv", "--python", "3.12", ".venv"], opts);
+    run("uv", ["pip", "install", "--python", VENV_PY, "-r", "requirements.txt"], opts);
+  } else {
+    run("python3", ["-m", "venv", ".venv"], opts);
+    run(VENV_PY, ["-m", "pip", "install", "-q", "-U", "pip"], opts);
+    run(VENV_PY, ["-m", "pip", "install", "-q", "-r", "requirements.txt"], opts);
+  }
+  if (!existsSync(VENV_PY)) throw new Error("не удалось собрать venv — проверь python3/uv");
+}
+
+function cmdUserbot(args) {
+  const sub = args[0] || "status";
+  if (sub === "setup") {
+    const env = readEnv();
+    if (!env.TELEGRAM_API_ID || !env.TELEGRAM_API_HASH) {
+      bad("Нет TELEGRAM_API_ID/TELEGRAM_API_HASH в .env. Создай приложение на my.telegram.org,");
+      bad("впиши оба ключа в .env и запусти снова: iva userbot setup");
+      process.exit(1);
+    }
+    // Auto-generate the local proxy bearer so a non-technical user needn't invent one.
+    if (!env.TELEGRAM_MCP_TOKEN) {
+      appendFileSync(ENV_PATH, `\nTELEGRAM_MCP_TOKEN=${randomBytes(24).toString("hex")}\n`);
+      ok("Сгенерировал TELEGRAM_MCP_TOKEN в .env.");
+    }
+    if (!existsSync(VENV_PY)) bootstrapUserbotVenv();
+    else ok("venv уже собран.");
+    writeUnits();
+    sc("enable", "--now", SVC_USERBOT);
+    // iva reads TELEGRAM_MCP_TOKEN at process start — restart so the new secret is live.
+    if (scQ("is-active", "iva.service").out === "active") sc("restart", "iva.service");
+    ok("Userbot-прокси включён. Подключи аккаунт по QR через бота: напиши боту «подключи мой телеграм».");
+    ok("Статус: iva userbot status · выключить: iva userbot off");
+    return;
+  }
+  if (sub === "off") {
+    scQ("disable", "--now", SVC_USERBOT);
+    ok("Userbot-прокси остановлен и выключен.");
+    return;
+  }
+  const active = scQ("is-active", SVC_USERBOT).out || "не установлен";
+  const enabled = scQ("is-enabled", SVC_USERBOT).out || "-";
+  console.log(`${SVC_USERBOT}: ${active} (${enabled})`);
+  console.log(`venv: ${existsSync(VENV_PY) ? "собран" : "нет — будет собран при setup"}`);
+}
+
 const [, , cmd, ...rest] = process.argv;
 const cmds = {
   update: cmdUpdate,
+  userbot: cmdUserbot,
   config: cmdConfig,
   login: cmdLogin,
   doctor: cmdDoctor,

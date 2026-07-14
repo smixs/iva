@@ -35,6 +35,7 @@ Note: `getUpdates` — which the setup wizard uses to discover your user ID — 
 |------|------|-----|
 | `iva.service` | always | the agent (`eve start`), `Restart=always` |
 | `iva-telegram-poll.service` | always | the long-polling bridge |
+| `iva-telegram-userbot.service` | opt-in (`iva userbot setup`) | Telethon userbot MCP proxy — see [userbot.md](userbot.md) |
 | `iva-memory-daily.timer` | 04:00 nightly | transcript → cards + daily summary, report to Telegram |
 | `iva-memory-weekly.timer` | Sun 04:15 | 7 dailies → weekly summary, report to Telegram |
 | `iva-memory-monthly.timer` | 1st, 04:20 | weeklies → monthly summary (silent) |

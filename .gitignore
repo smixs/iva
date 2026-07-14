@@ -15,6 +15,8 @@ data
 .claude
 # Telegram userbot proxy: локальный venv и файлы сессии (секреты аккаунта).
 services/telegram-userbot/.venv
+__pycache__/
+*.pyc
 *.session
 *.session-journal
 

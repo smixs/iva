@@ -1,0 +1,23 @@
+# systemd USER unit — Telegram userbot MCP-прокси (единственный владелец Telethon-сессии).
+#
+# Держит личный аккаунт владельца (userbot) и отдаёт его тулы по MCP streamable-HTTP
+# на 127.0.0.1 для iva. Opt-in: юнит ПИШЕТСЯ всегда, но включается только командой
+# `iva userbot setup` (она же собирает venv и генерирует токен). Без TELEGRAM_API_ID/HASH
+# в .env serve.py завершится с понятной ошибкой — поэтому не в авто-enable списке.
+#
+# Плейсхолдеры __PROJECT_DIR__/__PYTHON_BIN__ подставляет writeUnits() (bin/iva.mjs).
+[Unit]
+Description=Iva Telegram userbot MCP proxy (Telethon session owner)
+After=network-online.target iva.service
+Wants=iva.service
+
+[Service]
+WorkingDirectory=__PROJECT_DIR__/services/telegram-userbot
+EnvironmentFile=__PROJECT_DIR__/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__PYTHON_BIN__ serve.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
