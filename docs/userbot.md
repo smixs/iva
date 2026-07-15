@@ -1,14 +1,22 @@
-# Telegram userbot (opt-in)
+# Telegram userbot (beta, opt-in)
+
+> 🧪 **Beta — expect bugs.** This feature is new and still rough: onboarding steps or tool
+> calls can misbehave. Set it up **at your own risk** and don't lean on it for anything
+> critical yet. Feedback and issues welcome.
 
 Iva can read and send from your **personal Telegram account** (a userbot), not just
 the bot. It talks to a small proxy — `services/telegram-userbot/serve.py` — that owns
 one Telethon session and exposes Telegram over MCP on `127.0.0.1`. Iva connects to it
 natively (`agent/connections/telegram-userbot.ts`).
 
-> ⚠️ **At your own risk.** Automating a personal account violates Telegram's ToS and can
-> get the account **banned** — especially for sending. Reading is far safer. Iva warns you
-> before connecting and enforces anti-ban pacing, but the limits are per-account. Behave
-> like a human. See the enforced rules in `agent/skills/telegram-userbot/safety.md`.
+> ⚠️ **Account-ban risk.** Automating a personal account violates Telegram's ToS and can
+> get the account **banned** — especially for sending. Reading is far safer.
+>
+> A **built-in anti-ban guardrail is enforced server-side** (`guardrails.py`) — not just
+> advice: FloodWait compliance (wait ×1.3, retry once), a randomized delay after every send
+> (fixed-interval bots get flagged), and a circuit-breaker that pauses sending after 3
+> FloodWaits in 24h. The agent physically cannot bypass it. Limits are still per-account, so
+> behave like a human. Full rules: `agent/skills/telegram-userbot/safety.md`.
 
 ## Connect — just chat with the bot
 
