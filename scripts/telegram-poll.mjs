@@ -17,6 +17,7 @@ import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/us
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOW_DIR = join(ROOT, ".workflow-data");
+const NODE = process.execPath;
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN;
@@ -39,6 +40,7 @@ const HELP = [
   "Iva commands:",
   "/help — this list",
   "/restart — restart the agent if it's stuck",
+  "/update — check for a new version and install it",
   "/new — start over (reset the current conversation)",
   "/task <text> — add a task",
   "/tasks — show tasks",
@@ -156,14 +158,115 @@ async function restartAgent() {
   return sc("start", "iva.service");
 }
 
+// ── self-update (/update) ──────────────────────────────────────────────────
+// git in ROOT; resolves to trimmed stdout ("" on error) so callers can compare safely.
+function git(...args) {
+  return new Promise((resolve) =>
+    execFile("git", ["-C", ROOT, ...args], { maxBuffer: 1 << 20 }, (_e, out) => resolve((out || "").trim())),
+  );
+}
+const pkgVersion = (jsonText) => {
+  try {
+    return JSON.parse(jsonText).version || null;
+  } catch {
+    return null;
+  }
+};
+
+// Compare local HEAD against the upstream branch. Fetches first (network). `hasUpdate`
+// is true only when upstream is strictly ahead — local-ahead / equal ⇒ nothing to do.
+async function checkUpstream() {
+  const branch = (await git("rev-parse", "--abbrev-ref", "HEAD")) || "main";
+  await git("fetch", "--prune", "origin", branch);
+  const local = await git("rev-parse", "HEAD");
+  const remote = await git("rev-parse", `origin/${branch}`);
+  const behind = Number(await git("rev-list", "--count", `HEAD..origin/${branch}`)) || 0;
+  const localVer = pkgVersion(await git("show", "HEAD:package.json"));
+  const remoteVer = pkgVersion(await git("show", `origin/${branch}:package.json`));
+  return { branch, local, remote, behind, localVer, remoteVer, hasUpdate: behind > 0 && local !== remote };
+}
+
+// Run `iva update` in its OWN transient systemd scope, so it survives the restart of
+// THIS bridge (restartServices restarts iva-telegram-poll too — a plain child would be
+// killed with us). --collect GC's the unit after exit. notifyTelegram (reads .env) posts
+// the ✅/❌ result, so no reply plumbing is needed across the restart.
+function launchSelfUpdate() {
+  const args = [
+    "--user", "--collect", `--unit=iva-self-update-${Date.now()}`,
+    `--working-directory=${ROOT}`,
+    `--setenv=PATH=${process.env.PATH || ""}`,
+    NODE, join(ROOT, "bin/iva.mjs"), "update",
+  ];
+  return new Promise((resolve) =>
+    execFile("systemd-run", args, (err, out, e) => resolve({ ok: !err, msg: (e || out || "").toString().trim() })),
+  );
+}
+
+async function handleUpdateCheck(chatId) {
+  await reply(chatId, "Checking for updates…");
+  let info;
+  try {
+    info = await checkUpstream();
+  } catch (e) {
+    await reply(chatId, "Couldn't check for updates: " + e.message);
+    return;
+  }
+  if (!info.hasUpdate) {
+    await reply(chatId, `You're on the latest version (v${info.localVer ?? "?"}, ${info.local.slice(0, 7)}).`);
+    return;
+  }
+  const bump =
+    info.remoteVer && info.remoteVer !== info.localVer
+      ? `v${info.localVer ?? "?"} → v${info.remoteVer}`
+      : `${info.local.slice(0, 7)} → ${info.remote.slice(0, 7)}`;
+  await tg("sendMessage", {
+    chat_id: chatId,
+    text: `🆕 Update available: ${bump} (${info.behind} new commit${info.behind === 1 ? "" : "s"}).\nUpdate now?`,
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "⬆️ Update", callback_data: "iva_update:do" },
+        { text: "Skip", callback_data: "iva_update:skip" },
+      ]],
+    },
+  });
+}
+
+// Inline-button taps for the /update flow. Handled by the bridge; never delivered to eve.
+async function handleUpdateCallback(cq) {
+  const from = String(cq.from?.id ?? "");
+  const chatId = cq.message?.chat?.id;
+  const messageId = cq.message?.message_id;
+  await tg("answerCallbackQuery", { callback_query_id: cq.id }); // clear the button spinner
+  if (ALLOWED.size === 0 || !ALLOWED.has(from)) return true; // swallow untrusted taps
+  const action = cq.data.slice("iva_update:".length);
+  if (action === "skip") {
+    await tg("editMessageText", { chat_id: chatId, message_id: messageId, text: "Update skipped." });
+    return true;
+  }
+  // action === "do": ack in the message (editMessageText drops the keyboard), then launch detached.
+  await tg("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: "⏳ Updating Iva… the service restarts (~1–2 min). I'll message you when it's back.",
+  });
+  const r = await launchSelfUpdate();
+  if (!r.ok) await reply(chatId, "Couldn't start the update: " + r.msg);
+  return true;
+}
+
 // Control commands are handled by the BRIDGE (out-of-band) — they work even if the agent is stuck.
 // Trusted IDs only. Returns true if the command was handled (we do NOT deliver it to eve).
 async function handleControl(update) {
+  // /update inline-button taps (Update / Skip) — bridge-owned, not an eve HITL callback.
+  const cq = update.callback_query;
+  if (cq && typeof cq.data === "string" && cq.data.startsWith("iva_update:")) {
+    return handleUpdateCallback(cq);
+  }
   const msg = update.message;
   const text = (msg?.text || "").trim();
   if (!text.startsWith("/")) return false;
   const cmd = text.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
-  if (!["/help", "/usage", "/restart", "/new", "/clear", "/compact"].includes(cmd)) return false;
+  if (!["/help", "/usage", "/restart", "/new", "/clear", "/compact", "/update"].includes(cmd)) return false;
   const from = String(msg?.from?.id ?? "");
   if (ALLOWED.size === 0 || !ALLOWED.has(from)) return false; // untrusted — let eve drop it
   const chatId = msg?.chat?.id;
@@ -180,6 +283,11 @@ async function handleControl(update) {
     } catch (e) {
       await reply(chatId, "Couldn't read the usage log: " + e.message);
     }
+    return true;
+  }
+  // /update — check upstream; if newer, offer inline Update/Skip buttons. Out-of-band.
+  if (cmd === "/update") {
+    await handleUpdateCheck(chatId);
     return true;
   }
   // /restart, /new, /clear, /compact → process restart (reliable reset/recovery).
