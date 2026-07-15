@@ -327,3 +327,24 @@ export function toTelegramHtmlChunks(md, limit = 4096) {
     try { return [escHtml(md)]; } catch { return [""]; }
   }
 }
+
+// ── rich-message routing ────────────────────────────────────────────────────────
+// True when the text has a construct that Telegram's rich messages
+// (sendRichMessage, Bot API 10.1) render natively but parse_mode=HTML CANNOT:
+// GFM tables, task lists, <details>, block math. Headings/quotes/bold/etc.
+// render fine in HTML, so — like hermes-agent — we do NOT route on those: normal
+// replies stay on the proven HTML path. Conservative by design: a false negative
+// is just today's behavior; a false positive falls back on API rejection anyway.
+export function needsRichMessage(md) {
+  const s = String(md);
+  // GFM table delimiter row: a line of only pipes/dashes/colons/space with a dash run.
+  // Plain prose effectively never produces such a line, so this alone is a safe signal.
+  for (const line of s.split("\n")) {
+    const t = line.trim();
+    if (t.includes("|") && /-{2,}/.test(t) && /^[|\-: \t]+$/.test(t)) return true;
+  }
+  if (/^[ \t]*[-*][ \t]+\[[ xX]\][ \t]+/m.test(s)) return true; // task list
+  if (/<details[\s>]/i.test(s)) return true;                    // collapsible
+  if (/\$\$[\s\S]+?\$\$/.test(s)) return true;                  // block math
+  return false;
+}
