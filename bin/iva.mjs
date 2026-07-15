@@ -283,6 +283,7 @@ async function cmdUpdate(args) {
   console.log([fetchRes.out, fetchRes.err].filter(Boolean).join("\n"));
   if (fetchRes.code !== 0) {
     bad("git fetch failed — check the network/remote, then retry");
+    await notifyTelegram("❌ Iva update failed: couldn't reach the repo (git fetch). Old version still running.");
     process.exit(1);
   }
   // Fast-forward when possible; on a rewritten upstream (force-push) the branches
@@ -296,6 +297,7 @@ async function cmdUpdate(args) {
   console.log([upd.out, upd.err].filter(Boolean).join("\n"));
   if (upd.code !== 0) {
     bad("git update failed — resolve manually (git status), then retry");
+    await notifyTelegram("❌ Iva update failed: git update conflict — resolve on the server. Old version still running.");
     process.exit(1);
   }
   const after = gitHead();
@@ -316,6 +318,7 @@ async function cmdUpdate(args) {
   step("Building (eve build)…");
   if (run(NPM, ["run", "build"]).status !== 0) {
     bad("Build failed — NOT restarting the service (the old build stays working)");
+    await notifyTelegram("❌ Iva update failed: build error. Old version still running.");
     process.exit(1);
   }
   // Keep the Google Workspace CLI current alongside Iva (best-effort; Google tasks are optional).
