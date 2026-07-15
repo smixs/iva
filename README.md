@@ -28,6 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 - 🎙️ **Voice** — voice, audio and video notes transcribed with Deepgram nova-3; auto-detects ru/uz/en.
 - 👁️ **Vision** — photos described by your provider's own vision model; no extra key, no extra bill.
+- 🧾 **Rich replies** — tables, checklists, collapsible blocks and formulas render natively in Telegram via Bot API 10.1 rich messages; plain formatting keeps its proven path, with a graceful fallback.
 - 🧠 **Layered memory** — remembers across months, not just the current chat window.
 - 📇 **Personal CRM** — who your people are, what you agreed, when to follow up.
 - 🔎 **Search by meaning** — BM25 plus link-graph rerank, any language; optional vector mode with one key.
