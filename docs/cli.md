@@ -13,9 +13,12 @@ Iva has two control surfaces: slash commands in Telegram and the `iva` command o
 | `/new` | Start over — reset the current conversation |
 | `/restart` | Restart the agent when it's stuck |
 | `/clear` `/compact` | Same reset as `/new` |
+| `/update` | Check for a new version; if there is one, tap **Update** to install it |
 | `/usage [window]` | Token spend — variants below |
 
-Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it running. `/help`, `/usage`, `/restart`, `/new`, `/clear` and `/compact` never reach the agent — the long-poll bridge handles them itself, out-of-band. It stops `iva.service`, wipes `.workflow-data` (where eve re-enqueues stuck runs on every startup), and starts fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
+Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it running. `/help`, `/usage`, `/restart`, `/new`, `/clear`, `/compact` and `/update` never reach the agent — the long-poll bridge handles them itself, out-of-band. It stops `iva.service`, wipes `.workflow-data` (where eve re-enqueues stuck runs on every startup), and starts fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
+
+`/update` compares your install with the upstream repo. If a newer version exists it replies with the version bump and two buttons — **⬆️ Update** and **Skip**. Update pulls, rebuilds and restarts Iva in its own detached scope (so the restart of the bridge can't kill the update mid-flight), then reports ✅ or ❌ back in the chat. Nothing happens until you tap.
 
 ### /usage variants
 

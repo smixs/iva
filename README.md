@@ -87,7 +87,7 @@ Inbound content passes a prompt-injection sanitizer, every reply passes a secret
 
 | In Telegram | On the server |
 |---|---|
-| `/help` · `/task` · `/digest` · `/new` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
+| `/help` · `/task` · `/digest` · `/new` · `/update` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
 
 Full reference, including `/usage` breakdowns by model and by source: [docs/cli.md](docs/cli.md).
 
