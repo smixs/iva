@@ -18,6 +18,18 @@
       "prompt": "Find everything in the vault related to Sample Inc — the client card, projects, linked contacts. Show backlinks, and report any orphans in the 'work' domain.",
       "expected_output": "Navigates via the hub work/_index.md → wikilinks → work/crm/sample-inc.md. Uses graph.py backlinks for reverse lookups. Checks orphans in the 'work' domain via graph.py orphans. Re-links any orphan files when sensible targets exist.",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Update: we spoke with John Doe again — he left ACME Corp and is now CTO at Globex. Record it.",
+      "expected_output": "Runs search.py (or grep) first, finds the existing John Doe card, performs SUPERSEDE — does NOT create a second card. Rewrites company/role in frontmatter and the top of the description to Globex/CTO (Compiled Truth), moves the old ACME/CEO values to an append-only ## History section as dated lines, sets updated:, and re-touches the card.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Process today's daily note into cards.",
+      "expected_output": "Runs daily.py extract and supersede.py, reads schema node_types, lists the day's noteworthy items + topics. For each item runs a dedup-first lookup (search.py/grep) and applies ADD/UPDATE/SUPERSEDE/NOOP — updating existing cards instead of duplicating, resolving supersede-candidates.json. Links each created/updated card to a hub + 2 siblings and touches it. Writes a daily-summary card only if the schema defines a summary type. Appends an <!-- autograph-processed --> marker to the end of the daily file (never edits existing lines) and reports created/updated/superseded counts.",
+      "files": []
     }
   ]
 }

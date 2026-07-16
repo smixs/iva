@@ -25,18 +25,14 @@ from common import (
     parse_frontmatter,
     write_frontmatter,
     collect_duplicate_groups,
+    get_conflict_fields,
+    card_recency_date as _card_date,
 )
-
-# Поля, где разные значения у одной сущности = противоречие (а не обогащение).
-CONFLICT_FIELDS = ["company", "role", "status", "handle", "platform", "phone", "email", "title"]
-
-
-def _card_date(fields: dict) -> str:
-    # Свежесть карточки: updated > created > last_accessed. Для выбора «актуальной».
-    return fields.get("updated") or fields.get("created") or fields.get("last_accessed") or ""
 
 
 def scan(vault_dir: Path, schema: dict):
+    # Поля-противоречия и same-entity группировка читаются из схемы (single source of truth).
+    conflict_fields = get_conflict_fields(schema)
     groups = collect_duplicate_groups(vault_dir, schema)
     candidates = []
     for paths in groups.values():
@@ -48,11 +44,15 @@ def scan(vault_dir: Path, schema: dict):
                 fields = parse_frontmatter((vault_dir / rp).read_text(encoding="utf-8"))[0]
             except Exception:
                 continue
+            fields = fields or {}  # notes may lack frontmatter
+            # Already-resolved cards must not re-surface as live conflicts every night.
+            if str(fields.get("status", "")).lower() == "superseded":
+                continue
             cards.append({"path": rp, "fields": fields})
         if len(cards) < 2:
             continue
         conflicts = {}
-        for f in CONFLICT_FIELDS:
+        for f in conflict_fields:
             vals = {}
             for c in cards:
                 v = str(c["fields"].get(f, "")).strip()
@@ -83,9 +83,15 @@ def apply_supersede(vault_dir: Path, candidates: list) -> int:
         old_rel = cand["superseded_candidates"][0]
         cur_rel = cand["current"]
         old_path = vault_dir / old_rel
+        cur_path = vault_dir / cur_rel
         try:
+            cur_fields = parse_frontmatter(cur_path.read_text(encoding="utf-8"))[0] or {}
             fields, body, lines = parse_frontmatter(old_path.read_text(encoding="utf-8"))
         except Exception:
+            continue
+        fields = fields or {}
+        # Only apply on a genuinely newer winner — never guess on a tie or missing dates.
+        if _card_date(cur_fields) <= _card_date(fields):
             continue
         if fields.get("status") == "superseded":
             continue
@@ -105,7 +111,14 @@ def main():
     vault_dir = Path(args[0])
     apply = "--apply" in args
     verbose = "--verbose" in args
-    schema = load_schema(vault_dir / ".claude" / "skills" / "autograph" / "schema.json")
+    # Resolve THIS vault's schema first, then fall back to the shared example / {} so a
+    # scan against an arbitrary vault_dir never picks up a different vault's schema and
+    # never hard-fails on a fresh vault that ships only schema.example.json.
+    schema_path = vault_dir / ".claude" / "skills" / "autograph" / "schema.json"
+    try:
+        schema = load_schema(schema_path if schema_path.exists() else None)
+    except Exception:
+        schema = {}
 
     candidates = scan(vault_dir, schema)
 

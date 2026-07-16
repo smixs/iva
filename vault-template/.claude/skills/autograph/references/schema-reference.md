@@ -33,9 +33,28 @@ Example:
 "project": {
   "description": "Project with deliverables",
   "required": ["description", "tags", "status"],
-  "status": ["draft", "active", "done", "paused", "cancelled"]
+  "status": ["draft", "active", "done", "paused", "cancelled", "superseded"]
 }
 ```
+
+**Keep `superseded` in every type's status enum.** `enforce.py` remaps any status not
+in the enum back to the first valid one, so without `superseded` there, a retired card
+would be silently reverted to `active` on the next enforce run.
+
+## Update-in-place fields
+
+Autograph keeps **one card per subject**: when a fact changes, the existing card is
+updated in place rather than duplicated (see `references/update-in-place.md`). Three
+frontmatter/body conventions support this:
+
+| Field / section | Meaning |
+|-----------------|---------|
+| `updated: YYYY-MM-DD` | Date a Compiled-Truth value last changed. Recency key for dedup merges (`updated > created > last_accessed`). |
+| `status: superseded` | Whole card retired. Must be present in the type's status enum. |
+| `superseded_by: [[card]]` | Pointer to the replacement card. |
+| `## History` (body section) | Append-only log of old values, one dated line each: `- 2026-03→2026-06 · company: TDI Group`. Never edited or reordered. |
+
+Optional: `confidence: EXTRACTED | INFERRED | AMBIGUOUS` — certainty of a captured fact.
 
 ## type_aliases
 

@@ -22,12 +22,13 @@ import sys
 import json
 from pathlib import Path
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 
 from common import (
     parse_frontmatter, walk_vault, rel_path,
     load_schema, get_richness_fields, collect_duplicate_groups,
-    write_frontmatter, infer_domain, infer_type
+    write_frontmatter, infer_domain, infer_type,
+    get_conflict_fields, card_recency_date,
 )
 
 
@@ -273,13 +274,44 @@ def summarize_manifest(clusters: list[dict]) -> dict:
     }
 
 
-def merge_content(canonical_path: Path, extra_paths: list[Path]) -> bool:
-    """Merge unique info from extras into canonical. Returns True if changed."""
+def _history_line(from_date: str, to_date: str, field: str, val) -> str:
+    """A dated ## History line: `- 2026-03→2026-06 · company: TDI Group`."""
+    fm_ym = (from_date or '')[:7] or '????-??'
+    to_ym = (to_date or '')[:7] or '????-??'
+    return f"- {fm_ym}→{to_ym} · {field}: {val}"
+
+
+def append_history(body: str, lines: list[str]) -> str:
+    """Append lines to an append-only ## History section (existing lines untouched)."""
+    add = '\n'.join(lines)
+    text = body.rstrip('\n')
+    marker = re.search(r'^## History[ \t]*$', text, re.MULTILINE)
+    if not marker:
+        return text + '\n\n## History\n' + add + '\n'
+    # insert at the end of the History section (before the next ## or EOF)
+    nxt = re.search(r'^## ', text[marker.end():], re.MULTILINE)
+    if nxt:
+        at = marker.end() + nxt.start()
+        return text[:at].rstrip('\n') + '\n' + add + '\n\n' + text[at:]
+    return text + '\n' + add + '\n'
+
+
+def merge_content(canonical_path: Path, extra_paths: list[Path],
+                  conflict_fields: list | None = None, today: str | None = None) -> bool:
+    """Merge unique info from extras into canonical. Returns True if changed.
+
+    Conflict fields (scalar facts) are recency-aware: the newer card's value wins and
+    the losing value is recorded to append-only ## History with dates. Non-conflict
+    fields keep the richness/length-based enrichment behavior.
+    """
+    conflict = set(conflict_fields or [])
+    today = today or date.today().isoformat()
     canon_content = canonical_path.read_text(errors='replace')
     canon_fm, canon_body, canon_lines = parse_frontmatter(canon_content)
     if canon_fm is None:
         canon_fm = {}
     changed = False
+    history_lines: list[str] = []
 
     for extra_path in extra_paths:
         try:
@@ -289,10 +321,25 @@ def merge_content(canonical_path: Path, extra_paths: list[Path]) -> bool:
         extra_fm, extra_body, _ = parse_frontmatter(extra_content)
         if extra_fm is None:
             extra_fm = {}
+        canon_date = card_recency_date(canon_fm)
+        extra_date = card_recency_date(extra_fm)
 
-        # Merge frontmatter: take richer/non-empty values
+        # Merge frontmatter
         for key, val in extra_fm.items():
             canon_val = canon_fm.get(key, '')
+            # Conflict field with two differing present values → recency decides.
+            if key in conflict and canon_val and val and str(canon_val) != str(val):
+                if extra_date and (not canon_date or extra_date > canon_date):
+                    # extra is newer → it wins; old canon value → History
+                    history_lines.append(_history_line(canon_date, extra_date, key, canon_val))
+                    canon_fm[key] = val
+                    canon_fm['updated'] = today
+                    changed = True
+                else:
+                    # canon newer, or tie/missing dates → keep canon; extra's value → History
+                    history_lines.append(_history_line(extra_date, canon_date or today, key, val))
+                continue
+            # Non-conflict: take richer/non-empty values
             if not canon_val and val:
                 canon_fm[key] = val
                 changed = True
@@ -314,6 +361,10 @@ def merge_content(canonical_path: Path, extra_paths: list[Path]) -> bool:
             if m:
                 canon_body = canon_body.rstrip() + '\n\n' + m.group(0).strip() + '\n'
                 changed = True
+
+    if history_lines:
+        canon_body = append_history(canon_body, history_lines)
+        changed = True
 
     if changed:
         new_fm = write_frontmatter(canon_fm, canon_lines)
@@ -434,7 +485,8 @@ def apply_manifest(
             if action == 'merge_duplicate':
                 trash_dir.mkdir(parents=True, exist_ok=True)
                 extra_full = [vault_dir / e for e in extras]
-                merge_content(vault_dir / canonical, extra_full)
+                merge_content(vault_dir / canonical, extra_full,
+                              get_conflict_fields(schema or {}))
                 lr = redirect_links(vault_dir, extras, canonical)
                 moved = []
                 for extra in extras:
@@ -607,7 +659,8 @@ def dedup(vault_dir: Path, schema_path: Path | None = None, apply=False,
 
         if apply:
             extra_full = [vault_dir / e for e in extras]
-            did_merge = merge_content(vault_dir / canonical, extra_full)
+            did_merge = merge_content(vault_dir / canonical, extra_full,
+                                      get_conflict_fields(schema))
             if did_merge:
                 content_merged += 1
 

@@ -18,6 +18,23 @@ IGNORE_DIRS = frozenset({
 
 SCHEMA_FILENAME = 'schema.json'
 
+# Scalar facts where a NEW differing value supersedes the old (recency wins);
+# the losing value is recorded to ## History. Overridable via schema conflict_fields.
+DEFAULT_CONFLICT_FIELDS = ["company", "role", "status", "handle",
+                          "platform", "phone", "email", "title"]
+
+# Same-entity detection for dedup/supersede grouping. Strong keys (exact normalized
+# match on match_fields) union cards across different filenames. Name-only never
+# groups (fuzzy off) — a false merge is worse than a duplicate.
+DEFAULT_IDENTITY = {
+    "match_fields": ["email", "telegram", "handle", "phone"],
+    "same_domain_only": True,
+    "same_type_only": True,
+    "fuzzy_name": False,
+    "ignore_values": ["", "n/a", "-", "none", "unknown"],
+    "max_shared": 8,
+}
+
 
 # ─── SCHEMA ────────────────────────────────────────────────
 _schema_cache = {}
@@ -116,6 +133,39 @@ def get_richness_fields(schema: dict) -> list:
     """Frontmatter fields that indicate content richness (for dedup)."""
     cfg = schema.get('richness_fields', {})
     return cfg.get('bonus_fields', [])
+
+
+def get_conflict_fields(schema: dict) -> list:
+    """Scalar fields where differing values = temporal conflict (recency wins)."""
+    cfg = schema.get('conflict_fields', {}) or {}
+    return cfg.get('fields', DEFAULT_CONFLICT_FIELDS)
+
+
+def get_identity_config(schema: dict) -> dict:
+    """Same-entity detection config, defaults filled for any missing key."""
+    cfg = {k: v for k, v in (schema.get('identity') or {}).items() if k != '_comment'}
+    merged = dict(DEFAULT_IDENTITY)
+    merged.update(cfg)
+    return merged
+
+
+def card_recency_date(fields: dict) -> str:
+    """Recency key for a card: updated > created > last_accessed > ''."""
+    fields = fields or {}
+    return str(fields.get('updated') or fields.get('created')
+               or fields.get('last_accessed') or '')
+
+
+def normalize_identity_value(field: str, val) -> str:
+    """Normalize an identity value for cross-card matching."""
+    s = str(val).strip().lower()
+    if field in ('telegram', 'handle'):
+        s = s.lstrip('@')
+    elif field == 'phone':
+        s = re.sub(r'\D', '', s)
+    else:
+        s = re.sub(r'\s+', ' ', s)
+    return s
 
 
 def get_entity_extraction_config(schema: dict) -> dict:
@@ -236,6 +286,9 @@ def write_frontmatter(fields: dict, original_lines: list[str]) -> str:
 
     for line in original_lines:
         stripped = line.strip()
+        indented = line.startswith('  ') or line.startswith('\t')
+        if skip_continuation and indented:
+            continue  # fold/literal continuation of a replaced key: skip by indent, not colon
 
         if not stripped or stripped.startswith('#'):
             skip_continuation = False
@@ -252,7 +305,9 @@ def write_frontmatter(fields: dict, original_lines: list[str]) -> str:
         written.add(key)
         if key in fields:
             out.append(format_field(key, fields[key]))
-            if val_part in ('>-', '>', '|-', '|'):
+            # '' covers block-style lists and pending multiline values —
+            # their indented continuation lines are replaced wholesale too.
+            if val_part in ('>-', '>', '|-', '|', ''):
                 skip_continuation = True
         else:
             out.append(line)
@@ -404,31 +459,99 @@ def infer_type(file_rel_path: str, schema: dict) -> str:
 def collect_duplicate_groups(vault_dir: Path, schema: dict | None = None,
                              files: list[Path] | None = None,
                              ignored_stems: set[str] | None = None) -> dict[tuple[str, str, str], list[str]]:
-    """Group only compatible duplicates: same stem, domain, and type."""
+    """Group compatible duplicates.
+
+    Base: same stem, domain, and type (backward-compatible with earlier behavior).
+    When the schema defines an `identity` block, cards that share a strong identity
+    key (same normalized email/telegram/handle/phone) are additionally unioned across
+    different filenames — same-entity detection. Name-only never groups. Safety-first:
+    when in doubt, do NOT group (a false merge is worse than a duplicate).
+    """
     schema = schema or {}
     files = files or walk_vault(vault_dir)
     ignored_stems = ignored_stems or {'_index', 'MEMORY'}
-    groups = defaultdict(list)
 
+    records = []
     for md in files:
         if md.stem in ignored_stems:
             continue
-
         rp = rel_path(md, vault_dir)
         try:
             content = md.read_text(errors='replace')
         except Exception:
             content = ''
-
         fm, _, _ = parse_frontmatter(content)
         if fm is None:
             fm = {}
+        records.append({
+            'rp': rp, 'stem': md.stem,
+            'domain': str(fm.get('domain') or infer_domain(rp, schema)),
+            'type': str(fm.get('type') or infer_type(rp, schema)),
+            'fm': fm,
+        })
 
-        domain = str(fm.get('domain') or infer_domain(rp, schema))
-        card_type = str(fm.get('type') or infer_type(rp, schema))
-        groups[(md.stem, domain, card_type)].append(rp)
+    # union-find over record indices
+    parent = list(range(len(records)))
 
-    return {key: paths for key, paths in groups.items() if len(paths) > 1}
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    # seed: exact (stem, domain, type)
+    exact = defaultdict(list)
+    for i, r in enumerate(records):
+        exact[(r['stem'], r['domain'], r['type'])].append(i)
+    for idxs in exact.values():
+        for j in idxs[1:]:
+            union(idxs[0], j)
+
+    # entity-identity: opt-in via schema `identity` block
+    if schema.get('identity'):
+        ident = get_identity_config(schema)
+        ignore = set(ident['ignore_values'])
+        by_key = defaultdict(list)
+        for i, r in enumerate(records):
+            for f in ident['match_fields']:
+                v = r['fm'].get(f)
+                if v is None or isinstance(v, (list, dict)):
+                    continue
+                nv = normalize_identity_value(f, v)
+                if not nv or nv in ignore:
+                    continue
+                by_key[(f, nv)].append(i)
+        for idxs in by_key.values():
+            # generic/shared value (too many cards) → don't group
+            if len(idxs) < 2 or len(idxs) > ident['max_shared']:
+                continue
+            for a in range(len(idxs)):
+                for b in range(a + 1, len(idxs)):
+                    ia, ib = idxs[a], idxs[b]
+                    if ident['same_type_only'] and records[ia]['type'] != records[ib]['type']:
+                        continue
+                    if ident['same_domain_only'] and records[ia]['domain'] != records[ib]['domain']:
+                        continue
+                    union(ia, ib)
+
+    # assemble components with >1 member; key = first member's (stem, domain, type),
+    # which is unique per component (a given tuple lives in exactly one component).
+    comps = defaultdict(list)
+    for i in range(len(records)):
+        comps[find(i)].append(i)
+
+    result = {}
+    for idxs in comps.values():
+        if len(idxs) < 2:
+            continue
+        rep = records[idxs[0]]
+        result[(rep['stem'], rep['domain'], rep['type'])] = [records[i]['rp'] for i in idxs]
+    return result
 
 
 # ─── WIKILINKS ─────────────────────────────────────────────

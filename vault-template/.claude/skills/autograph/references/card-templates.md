@@ -40,6 +40,49 @@ status: active
 ---
 ```
 
+Optional fields on any card: `updated: YYYY-MM-DD` (set when a Compiled-Truth value
+changes), `confidence: EXTRACTED | INFERRED | AMBIGUOUS` (certainty of the fact).
+
+## Superseded card (whole card retired)
+
+When an entire card is obsolete (project renamed, decision reverted, entity merged),
+don't delete it — mark it and point to the replacement:
+
+```yaml
+---
+type: project
+description: >-
+  [Old project, replaced by the new one]
+tags: [client, type]
+status: superseded
+superseded_by: [[new-project-card]]
+---
+```
+
+## Card with History (a fact changed — see references/update-in-place.md)
+
+Compiled Truth (frontmatter + top of description) holds the current value; old values
+move to an append-only `## History` section, never edited:
+
+```markdown
+---
+type: contact
+description: >-
+  Creative director at Globex (since 2026-06)
+tags: [network, creative]
+status: active
+updated: 2026-06-01
+---
+
+# Jane Doe
+
+Creative director at Globex.
+
+## History
+- 2026-03→2026-06 · company: TDI Group
+- 2026-01→2026-06 · role: Art Director
+```
+
 ## Linking Protocol (ОБЯЗАТЕЛЬНО при создании карточки)
 
 После создания файла — СРАЗУ свяжи:
@@ -66,3 +109,5 @@ status: active
 ❌ `status: "interested"` — not in enum, use what your schema defines
 ❌ `tags: []` — empty tags add nothing, pick 2-5 relevant ones
 ❌ No frontmatter — every file needs `---` block
+❌ Creating a near-duplicate instead of updating — grep/`search.py` first
+❌ Two contradictory current values on one subject — supersede the old one into `## History`

@@ -5,17 +5,17 @@
     "note": {
       "description": "Knowledge note, article, thought",
       "required": ["description", "tags"],
-      "status": ["active", "draft", "archived"]
+      "status": ["active", "draft", "archived", "superseded"]
     },
     "contact": {
       "description": "Person",
       "required": ["description", "tags", "status"],
-      "status": ["active", "inactive"]
+      "status": ["active", "inactive", "superseded"]
     },
     "project": {
       "description": "Project with deliverables",
       "required": ["description", "tags", "status"],
-      "status": ["active", "done", "paused", "cancelled"]
+      "status": ["active", "done", "paused", "cancelled", "superseded"]
     }
   },
 
@@ -49,7 +49,8 @@
     "done": 8,
     "draft": 9,
     "paused": 10,
-    "cancelled": 11
+    "cancelled": 11,
+    "superseded": 12
   },
 
   "status_defaults": {
@@ -60,6 +61,21 @@
   "richness_fields": {
     "_comment": "frontmatter fields that indicate content richness (used by dedup)",
     "bonus_fields": ["telegram", "email", "company", "role", "source", "deal_status", "responsible"]
+  },
+
+  "conflict_fields": {
+    "_comment": "scalar facts where a NEW differing value supersedes the old (recency wins); the losing value is recorded to ## History. Used by dedup merge + supersede scan.",
+    "fields": ["company", "role", "status", "handle", "platform", "phone", "email", "title"]
+  },
+
+  "identity": {
+    "_comment": "same-entity detection for dedup/supersede grouping. Cards sharing a strong key (exact normalized match on match_fields) are grouped across different filenames. Name-only never groups (fuzzy off — a false merge is worse than a duplicate). Remove this block to disable and keep exact-stem grouping only.",
+    "match_fields": ["email", "telegram", "handle", "phone"],
+    "same_domain_only": true,
+    "same_type_only": true,
+    "fuzzy_name": false,
+    "ignore_values": ["", "n/a", "-", "none", "unknown"],
+    "max_shared": 8
   },
 
   "entity_extraction": {
