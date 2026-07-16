@@ -25,11 +25,11 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@ai-sdk/openai": "4.0.0-beta.76",
-    "@ai-sdk/openai-compatible": "^3.0.0-beta.57",
+    "@ai-sdk/openai": "4.0.15",
+    "@ai-sdk/openai-compatible": "^3.0.11",
     "@vercel/connect": "0.2.2",
-    "ai": "7.0.0-beta.178",
-    "eve": "0.11.4",
+    "ai": "7.0.29",
+    "eve": "0.24.4",
     "just-bash": "^3.0.0",
     "zod": "4.4.3"
   },
@@ -39,10 +39,10 @@
     "patch-package": "^8.0.1"
   },
   "overrides": {
-    "ai": "7.0.0-beta.178"
+    "ai": "7.0.29"
   },
   "resolutions": {
-    "ai": "7.0.0-beta.178"
+    "ai": "7.0.29"
   },
   "engines": {
     "node": "24.x"
