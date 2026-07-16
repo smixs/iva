@@ -24,3 +24,10 @@ __pycache__/
 # Скелет хранится в vault-template/ (трекается); живой vault создаёт scripts/init-vault.mjs.
 /vault/
 
+
+# Скиллы держат локальные креды рядом со скриптами (пример: bts-express) —
+# такие файлы никогда не должны уехать в публичный репо даже через git add -A.
+agent/skills/**/*token*.json
+agent/skills/**/*secret*
+agent/skills/**/*credential*
+agent/skills/**/*.pem
