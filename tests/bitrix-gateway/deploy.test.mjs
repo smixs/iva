@@ -123,6 +123,53 @@ test('transactional root wrapper restarts current code and removes only a proven
   assert.doesNotMatch(wrapper, /daemon-reload \|\| true|enable --now|BITRIX_WEBHOOK_URL|sudo\s+(?:bash|sh)\s+-c/iu);
 });
 
+test('admin installer uses a pinned root copy, guards IVA units, and invalidates the caller ticket', async () => {
+  const admin = await readFile(new URL('admin-install.sh', deployRoot), 'utf8');
+  const manifest = admin.indexOf('/usr/bin/sha256sum -c --strict');
+  const capture = admin.indexOf('active=$(list_active_units)', manifest);
+  const publish = admin.indexOf('/usr/bin/ln -T -- "$tmp_state" "$STATE_FILE"', capture);
+  const stop = admin.indexOf('stop_unit_set "$EXPECTED_UNITS"', publish);
+  const installer = admin.indexOf('"$LIVE_REPO/$INSTALLER_REL"', stop);
+  const cleanup = admin.indexOf('cleanup()');
+  const echoRestore = admin.indexOf('/usr/bin/stty echo < "$TTY_PATH"', cleanup);
+  const invalidate = admin.indexOf('invalidate_sudo_ticket', echoRestore);
+  const restore = admin.indexOf('restore_expected_units', invalidate);
+  const removeState = admin.indexOf('/usr/bin/rm -- "$STATE_FILE"', restore);
+  const complete = admin.indexOf("'ADMIN_INSTALL_COMPLETE'", removeState);
+  const stopFunction = admin.indexOf('stop_unit_set()');
+  const stopTimer = admin.indexOf('iva.timer|iva-*.timer', stopFunction);
+  const stopOther = admin.indexOf('iva-*.service)', stopTimer);
+  const stopMain = admin.indexOf('stop iva.service', stopOther);
+  const restoreFunction = admin.indexOf('restore_expected_units()');
+  const restoreMain = admin.indexOf('start iva.service', restoreFunction);
+  const restoreOther = admin.indexOf('start "$unit"', restoreMain);
+  const restoreTimer = admin.indexOf('iva.timer|iva-*.timer', restoreOther);
+
+  assert.match(admin, /^#!\/usr\/bin\/bash$/mu);
+  assert.match(admin, /^PATH=\/usr\/sbin:\/usr\/bin:\/sbin:\/bin$/mu);
+  assert.match(admin, /\[\[ \$# -eq 1 && "\$EXPECTED_COMMIT" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
+  assert.match(admin, /\[\[ \$\(\/usr\/bin\/id -u\) -eq 0 \]\]/u);
+  assert.match(admin, /A dedicated interactive TTY is required/u);
+  assert.match(admin, /ROOT_COPY=\/run\/iva-bitrix-admin-install/u);
+  assert.match(admin, /fixed root-owned copy from \/run/u);
+  assert.match(admin, /root:root 700/u);
+  assert.match(admin, /A non-root SUDO_USER is required/u);
+  assert.match(admin, /\/usr\/sbin\/runuser -u "\$IVA_USER"/u);
+  assert.match(admin, /-c safe\.directory="\$LIVE_REPO"/u);
+  assert.ok(manifest >= 0 && manifest < capture && capture < publish && publish < stop && stop < installer);
+  assert.ok(cleanup >= 0 && echoRestore > cleanup && echoRestore < invalidate);
+  assert.ok(invalidate < restore && restore < removeState && removeState < complete);
+  assert.ok(stopFunction >= 0 && stopTimer < stopOther && stopOther < stopMain);
+  assert.ok(restoreFunction >= 0 && restoreMain < restoreOther && restoreOther < restoreTimer);
+  assert.match(admin, /run_as_sudo_caller \/usr\/bin\/sudo -k/u);
+  assert.match(admin, /run_as_sudo_caller \/usr\/bin\/sudo -K/u);
+  assert.match(admin, /run_as_sudo_caller \/usr\/bin\/sudo -n \/usr\/bin\/true/u);
+  assert.match(admin, /\.bitrix\.env\.XXXXXX/u);
+  assert.match(admin, /BITRIX_CHAT_READ_VERIFIED=false/u);
+  assert.match(admin, /secret input was invalid; no secret was installed/u);
+  assert.doesNotMatch(admin, /\beval\b|sudo\s+(?:bash|sh)\s+-c|https:\/\/b24\./iu);
+});
+
 test('root-owned secret audit fails closed without printing the webhook', async () => {
   const installer = await readFile(new URL('install.sh', deployRoot), 'utf8');
   const audit = await readFile(new URL('audit-secret.py', deployRoot), 'utf8');
