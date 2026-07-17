@@ -235,6 +235,8 @@ test('legacy comments run only after CHAT_ID, TASKS_TASK, and TASKS resolve null
       return { result: null };
     }
     if (kind === 'legacy') {
+      assert.equal(params.TASKID, 123);
+      assert.equal(typeof params.TASKID, 'number');
       assert.deepEqual(resolution, {
         taskChatIdNull: true,
         tasksTaskNull: true,
@@ -265,6 +267,25 @@ test('legacy comments run only after CHAT_ID, TASKS_TASK, and TASKS resolve null
     )),
     ['TASKS_TASK', 'TASKS', 'legacy', 'legacy'],
   );
+});
+
+test('unsafe large IDs never reach the legacy integer-only API', async () => {
+  const taskId = '9007199254740993';
+  const client = new ScriptedClient(({ kind, method }) => {
+    const ready = preflight(method);
+    if (ready) return ready;
+    if (method === 'tasks.task.get') return { result: { task: rawTask({ ID: taskId, CHAT_ID: null, COMMENTS_COUNT: '1' }) } };
+    if (method === 'task.checklistitem.getlist') return { result: [] };
+    if (method === 'im.chat.get') return { result: null };
+    if (kind === 'legacy') throw new Error('Unsafe ID must not reach legacy comments');
+    throw new Error('Unexpected method ' + method);
+  });
+
+  await assert.rejects(new BitrixReadOnlyGateway({ client }).taskSnapshot(taskId), {
+    code: 'LEGACY_TASK_ID_UNSUPPORTED',
+    category: 'invalid_response',
+  });
+  assert.equal(client.calls.some((call) => call.kind === 'legacy'), false);
 });
 
 test('direct task access re-applies policy before checklist or discussion', async () => {

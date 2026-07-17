@@ -339,6 +339,13 @@ export class BitrixReadOnlyGateway {
   }
 
   async #legacyComments(taskId, resolution) {
+    const legacyTaskId = Number(taskId);
+    if (!Number.isSafeInteger(legacyTaskId) || legacyTaskId < 1) {
+      throw new GatewayError('LEGACY_TASK_ID_UNSUPPORTED', 'The legacy Bitrix comment API requires a safe integer task ID.', {
+        status: 502,
+        category: 'invalid_response',
+      });
+    }
     const messages = [];
     let start = 0;
     const seenStarts = new Set();
@@ -352,7 +359,7 @@ export class BitrixReadOnlyGateway {
       }
       seenStarts.add(startKey);
       const response = await this.client.getLegacyComments({
-        TASKID: taskId,
+        TASKID: legacyTaskId,
         ORDER: { POST_DATE: 'ASC', ID: 'ASC' },
         start,
       }, resolution);
