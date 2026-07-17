@@ -42,7 +42,6 @@ export class ScriptedClient {
     this.calls = [];
     this.portalOrigin = 'https://bitrix.invalid';
     this.webhookUrl = fakeWebhook();
-    this.chatReadVerified = false;
   }
 
   async request(method, params = {}, context = {}) {

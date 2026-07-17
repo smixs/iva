@@ -283,16 +283,6 @@ export class BitrixReadOnlyGateway {
     }
 
     if (chatId) {
-      if (this.client.chatReadVerified !== true) {
-        throw new GatewayError(
-          'CHAT_READ_STATE_UNVERIFIED',
-          'Bitrix chat reads are disabled until their read-state behavior is explicitly verified.',
-          {
-            status: 503,
-            category: 'chat_read_state_unverified',
-          },
-        );
-      }
       return { source: 'chat', messages: await this.#chatMessages(chatId) };
     }
     if (!task.commentsCount) return { source: 'none', messages: [] };

@@ -135,7 +135,6 @@ test('snapshot preserves business contacts and injection text while omitting att
     }
     throw new Error('Unexpected method ' + method);
   });
-  client.chatReadVerified = true;
   const gateway = new BitrixReadOnlyGateway({ client });
   const result = await gateway.taskSnapshot('123');
 
@@ -207,20 +206,19 @@ test('completed list semantics include declined and closedAt tasks while active 
   assert.equal(activeResult.tasks[0].closed, false);
 });
 
-test('known chat fails safely without reading messages when the read-state gate is false', async () => {
+test('known chat reads history through the fixed read-only method and never falls back to legacy comments', async () => {
   const client = new ScriptedClient(({ method }) => {
     const ready = preflight(method);
     if (ready) return ready;
     if (method === 'tasks.task.get') return { result: { task: rawTask({ CHAT_ID: '500', COMMENTS_COUNT: '2' }) } };
     if (method === 'task.checklistitem.getlist') return { result: [] };
-    if (method === 'im.dialog.messages.get') throw new Error('Message read must not be called');
+    if (method === 'im.dialog.messages.get') return { result: { messages: [] } };
     throw new Error('Unexpected method ' + method);
   });
-  await assert.rejects(new BitrixReadOnlyGateway({ client }).taskSnapshot('123'), {
-    code: 'CHAT_READ_STATE_UNVERIFIED',
-    category: 'chat_read_state_unverified',
-  });
-  assert.equal(client.calls.some((call) => call.method === 'im.dialog.messages.get'), false);
+  const result = await new BitrixReadOnlyGateway({ client }).taskSnapshot('123');
+  assert.equal(result.snapshot.discussion.source, 'chat');
+  assert.deepEqual(result.snapshot.discussion.messages, []);
+  assert.equal(client.calls.filter((call) => call.method === 'im.dialog.messages.get').length, 1);
   assert.equal(client.calls.some((call) => call.kind === 'legacy'), false);
 });
 

@@ -28,6 +28,8 @@ test('runtime allowlist rejects writes, generic legacy comments, and non-preflig
 
   await assert.rejects(client.request('tasks.task.update', { taskId: '123' }), { code: 'METHOD_NOT_ALLOWED' });
   await assert.rejects(client.request('task.commentitem.add', { taskId: '123' }), { code: 'METHOD_NOT_ALLOWED' });
+  await assert.rejects(client.request('im.dialog.read', { DIALOG_ID: 'chat1' }), { code: 'METHOD_NOT_ALLOWED' });
+  await assert.rejects(client.request('im.dialog.unread', { DIALOG_ID: 'chat1' }), { code: 'METHOD_NOT_ALLOWED' });
   await assert.rejects(client.request('task.commentitem.getlist', { TASKID: '123' }), { code: 'METHOD_NOT_ALLOWED' });
   await assert.rejects(client.request('scope'), { code: 'METHOD_NOT_ALLOWED' });
   await assert.rejects(client.getLegacyComments({ TASKID: '123' }, {
@@ -65,30 +67,16 @@ test('legacy comments require the complete, positive chat-resolution gate', asyn
   assert.match(urls[0], /task\.commentitem\.getlist\.json$/u);
 });
 
-test('chat message reads are rejected before fetch unless explicitly verified in env', async () => {
+test('documented chat-history reads are allowed without enabling any read-state method', async () => {
   let fetchCalls = 0;
-  const blocked = clientWith(async () => {
+  const client = clientWith(async () => {
     fetchCalls += 1;
     return jsonResponse({ result: { messages: [] } });
   });
-  await assert.rejects(blocked.request('im.dialog.messages.get', { DIALOG_ID: 'chat1' }), {
-    code: 'CHAT_READ_STATE_UNVERIFIED',
-    category: 'chat_read_state_unverified',
-  });
-  assert.equal(fetchCalls, 0);
-
-  const enabled = new BitrixHttpClient({
-    env: {
-      BITRIX_WEBHOOK_URL: fakeWebhook(),
-      BITRIX_CHAT_READ_VERIFIED: 'true',
-    },
-    fetchImpl: async () => {
-      fetchCalls += 1;
-      return jsonResponse({ result: { messages: [] } });
-    },
-  });
-  await enabled.request('im.dialog.messages.get', { DIALOG_ID: 'chat1' });
+  await client.request('im.dialog.messages.get', { DIALOG_ID: 'chat1' });
   assert.equal(fetchCalls, 1);
+  assert.equal(BITRIX_READ_METHODS.includes('im.dialog.read'), false);
+  assert.equal(BITRIX_READ_METHODS.includes('im.dialog.unread'), false);
 });
 
 test('read-state preflight bypass requires the exact context and fixed dialog parameters', async () => {

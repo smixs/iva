@@ -1,5 +1,7 @@
 import { GatewayError, maskWebhook } from './errors.mjs';
 
+// Bitrix documents chat-history retrieval separately from the explicit
+// im.dialog.read/im.dialog.unread state-changing methods, which stay absent here.
 const READ_METHODS = new Set([
   'profile',
   'scope',
@@ -158,7 +160,6 @@ export class BitrixHttpClient {
 
     this.webhookUrl = parsed.href.endsWith('/') ? parsed.href : `${parsed.href}/`;
     this.portalOrigin = parsed.origin;
-    this.chatReadVerified = String(env.BITRIX_CHAT_READ_VERIFIED ?? '').trim().toLowerCase() === 'true';
     this.fetchImpl = fetchImpl;
     this.timeoutMs = Math.max(1, Math.min(Number(timeoutMs) || 10_000, 60_000));
     this.maxAttempts = Math.max(1, Math.min(Number(maxAttempts) || 3, 5));
@@ -207,15 +208,6 @@ export class BitrixHttpClient {
     }
     if (method === 'im.dialog.messages.get' && readStatePreflight) {
       assertReadStatePreflightParams(method, params);
-    } else if (method === 'im.dialog.messages.get' && !this.chatReadVerified) {
-      throw new GatewayError(
-        'CHAT_READ_STATE_UNVERIFIED',
-        'Bitrix chat reads are disabled until their read-state behavior is explicitly verified.',
-        {
-          status: 503,
-          category: 'chat_read_state_unverified',
-        },
-      );
     }
     return this.#perform(method, params);
   }
