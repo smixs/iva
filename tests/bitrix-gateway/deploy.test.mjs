@@ -156,7 +156,9 @@ test('admin installer uses a pinned root copy, guards IVA units, and invalidates
   assert.match(admin, /root:root 700/u);
   assert.match(admin, /A non-root SUDO_USER is required/u);
   assert.match(admin, /\/usr\/sbin\/runuser -u "\$IVA_USER"/u);
-  assert.match(admin, /-c safe\.directory="\$LIVE_REPO"/u);
+  assert.match(admin, /run_git_as_iva\(\)/u);
+  assert.match(admin, /GIT_OPTIONAL_LOCKS=0 \/usr\/bin\/git -C "\$LIVE_REPO"/u);
+  assert.doesNotMatch(admin, /\/usr\/bin\/git -c safe\.directory/u);
   assert.ok(manifest >= 0 && manifest < capture && capture < publish && publish < stop && stop < installer);
   assert.ok(cleanup >= 0 && echoRestore > cleanup && echoRestore < invalidate);
   assert.ok(invalidate < restore && restore < removeState && removeState < complete);

@@ -60,6 +60,10 @@ run_as_iva() {
     DBUS_SESSION_BUS_ADDRESS="$IVA_BUS" "$@"
 }
 
+run_git_as_iva() {
+  run_as_iva /usr/bin/env GIT_OPTIONAL_LOCKS=0 /usr/bin/git -C "$LIVE_REPO" "$@"
+}
+
 run_as_sudo_caller() {
   /usr/sbin/runuser -u "$SUDO_CALLER" -- /usr/bin/env -i \
     HOME="$SUDO_CALLER_HOME" USER="$SUDO_CALLER" LOGNAME="$SUDO_CALLER" \
@@ -215,11 +219,11 @@ trap 'exit 143' TERM
 [[ ! -e "$STATE_FILE" && ! -L "$STATE_FILE" ]] ||
   fail 'stale admin recovery state exists; inspect it before retrying'
 
-[[ $(/usr/bin/git -c safe.directory="$LIVE_REPO" -C "$LIVE_REPO" rev-parse --show-toplevel) == "$LIVE_REPO" ]] ||
+[[ $(run_git_as_iva rev-parse --show-toplevel) == "$LIVE_REPO" ]] ||
   fail 'invalid live repository root'
-[[ $(/usr/bin/git -c safe.directory="$LIVE_REPO" -C "$LIVE_REPO" rev-parse HEAD) == "$EXPECTED_COMMIT" ]] ||
+[[ $(run_git_as_iva rev-parse HEAD) == "$EXPECTED_COMMIT" ]] ||
   fail 'live checkout commit does not match the reviewed commit'
-[[ -z $(/usr/bin/git -c safe.directory="$LIVE_REPO" -C "$LIVE_REPO" status --porcelain=v1 --untracked-files=all) ]] ||
+[[ -z $(run_git_as_iva status --porcelain=v1 --untracked-files=all) ]] ||
   fail 'live checkout is not fully clean'
 
 (
