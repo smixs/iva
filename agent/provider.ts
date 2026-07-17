@@ -20,6 +20,7 @@ const PROVIDERS = {
     visionModel: "gemma3:12b",
   },
   opencode: {
+    // Продукт переименован Zen → Go, но API живёт на легаси-пути /zen/ (у /go/v1 — 404).
     baseURL: "https://opencode.ai/zen/go/v1",
     apiKey: process.env.OPENCODE_API_KEY,
     // Эндпоинт ждёт bare-ID — срезаем внутренний UI-префикс "opencode-go/" из дефолта и старых .env.

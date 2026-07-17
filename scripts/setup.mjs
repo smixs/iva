@@ -22,14 +22,17 @@ const dataDirAbs = (env) => {
 const OLLAMA_BASE = "https://ollama.com/v1";
 const OPENCODE_BASE = "https://opencode.ai/zen/go/v1";
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-// OpenCode Go models — bare ID without the "opencode-go/" prefix: that's exactly what the
-// /v1 endpoint expects in the request body (with the prefix it answers "Model ... is not supported").
+// OpenCode Go (ex-Zen; the /zen/ API path is legacy and still the live one) — bare model ID
+// without the "opencode-go/" prefix: that's exactly what the /v1 endpoint expects in the request
+// body (with the prefix it answers "Model ... is not supported"). The wizard fetches the live
+// list from GET /models; this is only the offline fallback.
 const OPENCODE_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4-flash",
+  "kimi-k3",
   "kimi-k2.7-code",
   "glm-5.2",
-  "qwen3.7",
+  "qwen3.7-max",
 ];
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", c: "\x1b[36m", b: "\x1b[1m", r: "\x1b[31m", x: "\x1b[0m" };
@@ -169,6 +172,18 @@ async function opencodeCheck(key) {
     return null; // 200/404 — key is at least well-formed
   } catch {
     return null; // network flaky — don't block
+  }
+}
+// Live Go model list (bare IDs). The catalog drifts (kimi-k3 appeared, qwen3.7 was retired),
+// so the hardcoded list is only a fallback for when the endpoint is unreachable.
+async function opencodeModels(key) {
+  try {
+    const res = await fetch(`${OPENCODE_BASE}/models`, { headers: { Authorization: `Bearer ${key}` } });
+    if (!res.ok) return OPENCODE_MODELS;
+    const ids = ((await res.json()).data || []).map((m) => m.id).sort();
+    return ids.length ? ids : OPENCODE_MODELS;
+  } catch {
+    return OPENCODE_MODELS;
   }
 }
 // OpenRouter: ключ проверяем через GET /key (требует auth, токенов не тратит).
@@ -371,7 +386,7 @@ async function main() {
   head(1, t("Provider and model — Iva's brain", "Провайдер и модель — мозг Iva"));
   console.log(`  ${t("Who to reach the model through:", "Через кого ходить к модели:")}`);
   console.log(`    1) Ollama Cloud — ${C.c}https://ollama.com${C.x} ${t("(~$20/mo, higher limits)", "(~$20/мес, лимиты побольше)")}`);
-  console.log(`    2) OpenCode Zen — ${C.c}https://opencode.ai${C.x} ${t("(Go ~$5/mo, cheaper)", "(Go ~$5/мес, дешевле)")}`);
+  console.log(`    2) OpenCode Go — ${C.c}https://opencode.ai/go${C.x} ${t("(~$5/mo, cheaper)", "(~$5/мес, дешевле)")}`);
   console.log(`    3) OpenAI ${t("(ChatGPT subscription)", "(подписка ChatGPT)")} — ${C.c}chatgpt.com${C.x} ${t("(sign in, no API key)", "(вход по подписке, без API-ключа)")}`);
   console.log(`    4) OpenRouter — ${C.c}https://openrouter.ai${C.x} ${t("(one key → 300+ models, pay-as-you-go)", "(один ключ → 300+ моделей, оплата по факту)")}`);
   const provDef = { opencode: "2", codex: "3", openrouter: "4" }[prov0] || "1";
@@ -406,10 +421,11 @@ async function main() {
       existing: process.env.OPENCODE_API_KEY || existing.OPENCODE_API_KEY || "",
       validate: opencodeCheck,
     });
-    console.log(`\n  ${t("OpenCode Go models:", "Модели OpenCode Go:")}`);
+    const models = await opencodeModels(out.OPENCODE_API_KEY);
+    console.log(`\n  ${t("OpenCode Go models", "Модели OpenCode Go")}: ${models.length}. ${t("I recommend", "Рекомендую")} ${C.g}deepseek-v4-pro${C.x}.`);
     // Strip the stale prefix from older .env files so the current model pre-selects from the bare list.
     const curModel = (out.OPENCODE_MODEL || "").replace(/^opencode-go\//, "");
-    out.OPENCODE_MODEL = await pickFromList(OPENCODE_MODELS, curModel, OPENCODE_MODELS[0]);
+    out.OPENCODE_MODEL = await pickFromList(models, curModel, "deepseek-v4-pro");
     out.OPENCODE_CONTEXT_WINDOW = out.OPENCODE_CONTEXT_WINDOW || "131072";
     console.log(`  → ${t("model", "модель")}: ${C.g}${out.OPENCODE_MODEL}${C.x}`);
   } else if (provider === "openrouter") {
