@@ -37,3 +37,20 @@ test('canonical numeric IDs sort safely above Number.MAX_SAFE_INTEGER', () => {
   assert.match(task.description, /owner@example\.test/u);
   assert.match(task.description, /912/u);
 });
+
+test('normalizes actual Bitrix camelCase policy fields', () => {
+  const task = normalizeTask({
+    id: '394930',
+    groupId: '97',
+    responsibleId: '1274',
+    responsible: { id: '1274', name: 'Current user' },
+    accomplices: ['181'],
+    status: '2',
+  });
+
+  assert.equal(task.id, '394930');
+  assert.equal(task.groupId, '97');
+  assert.equal(task.responsible.id, '1274');
+  assert.deepEqual(task.accompliceIds, ['181']);
+  assert.equal(task.roleFieldsComplete, true);
+});

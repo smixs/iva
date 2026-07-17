@@ -230,7 +230,7 @@ trap 'exit 143' TERM
   cd "$LIVE_REPO"
   /usr/bin/sha256sum -c --strict <<'MANIFEST'
 04794f61beefaed1c71fe8690c1e762df28846c863e59c3ef94815760295251c  services/bitrix-gateway/errors.mjs
-53d0d35c1d6a657b1377af0a7982f70baaf1f8f43aae387381e89bc665098694  services/bitrix-gateway/normalize.mjs
+79907139610a5ddc3645f4969c6741801afcf426edfd2c6c9ddd1ceb6b670c09  services/bitrix-gateway/normalize.mjs
 3dfa764235f3c7cd670337d5ebb85278d80de098d67bcefdecf67d54fe299dcf  services/bitrix-gateway/policy.mjs
 1a8ae1d30bfddd0121d0544f232d9c0ba914d8f3eddbbd50708353a30cf1988e  services/bitrix-gateway/client.mjs
 f0fd2e1aec1437708a515815c66b1d8e28e45dcbf938c952e751b7f3f8eeb441  services/bitrix-gateway/gateway.mjs

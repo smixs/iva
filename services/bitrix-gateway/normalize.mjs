@@ -13,17 +13,21 @@ const STATUS_NAMES = Object.freeze({
 const STATUS_ALIASES = new Map(Object.entries(STATUS_NAMES).map(([code, name]) => [name, Number(code)]));
 STATUS_ALIASES.set('review', 4);
 
+function fieldKey(value) {
+  return String(value).replace(/[^A-Za-z0-9]/gu, '').toUpperCase();
+}
+
 function fieldMap(object) {
   const mapped = new Map();
   if (!object || typeof object !== 'object') return mapped;
-  for (const [key, value] of Object.entries(object)) mapped.set(key.toUpperCase(), value);
+  for (const [key, value] of Object.entries(object)) mapped.set(fieldKey(key), value);
   return mapped;
 }
 
 export function pick(object, ...names) {
   const mapped = fieldMap(object);
   for (const name of names) {
-    const key = String(name).toUpperCase();
+    const key = fieldKey(name);
     if (mapped.has(key)) return mapped.get(key);
   }
   return undefined;
@@ -31,7 +35,7 @@ export function pick(object, ...names) {
 
 export function hasField(object, ...names) {
   const mapped = fieldMap(object);
-  return names.some((name) => mapped.has(String(name).toUpperCase()));
+  return names.some((name) => mapped.has(fieldKey(name)));
 }
 
 export function idString(value) {
