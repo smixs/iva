@@ -72,10 +72,15 @@ done
 install -o root -g root -m 0755 \
   "$SOURCE_DIR/preflight-read-state.mjs" "$INSTALL_DIR/preflight-read-state.mjs"
 
+[ -f "$SCRIPT_DIR/audit-secret.py" ] && [ ! -L "$SCRIPT_DIR/audit-secret.py" ] \
+  || fail 'Required secret audit helper is missing or is a symlink.'
+install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/audit-secret.py" "$INSTALL_DIR/audit-secret.py"
+
 install -o root -g root -m 0644 "$SCRIPT_DIR/$UNIT_NAME" "$UNIT_DIR/$UNIT_NAME"
 systemctl daemon-reload
 
 printf '%s\n' 'Installed the root-owned IVA Bitrix gateway and validated the pre-existing secret.'
-printf '%s\n' 'Review the unit, then run: systemctl enable --now iva-bitrix-gateway.service'
+printf '%s\n' 'Source installation complete; use the audited install-and-start.sh transaction.'
 printf '%s\n' 'Read-state preflight (positive task ID only):'
 printf '%s\n' 'sudo -u iva-bitrix /usr/bin/node --env-file=/etc/iva-bitrix/bitrix.env /usr/local/lib/iva-bitrix-gateway/preflight-read-state.mjs <task-id>'
