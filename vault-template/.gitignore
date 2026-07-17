@@ -17,6 +17,10 @@
 .DS_Store
 Thumbs.db
 
+# Bitrix task snapshots may contain private work discussion. Keep them local to the VPS;
+# technical sync state lives outside the vault under ASSISTANT_DATA_DIR.
+/tasks/bitrix/
+
 # Note: schema.json is intentionally tracked (the schema IS the source of truth).
 # A local-only override may live in schema.local.json:
 schema.local.json

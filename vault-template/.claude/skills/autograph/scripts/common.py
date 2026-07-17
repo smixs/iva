@@ -15,6 +15,7 @@ IGNORE_DIRS = frozenset({
     '.obsidian', 'attachments', '.git', '.graph',
     '.claude', '.trash', 'backup', 'archive', '__pycache__'
 })
+IGNORE_PATH_PREFIXES = frozenset({'tasks/bitrix'})
 
 SCHEMA_FILENAME = 'schema.json'
 
@@ -338,11 +339,16 @@ def format_field(key: str, val) -> str:
 
 # ─── FILE OPERATIONS ───────────────────────────────────────
 def walk_vault(vault_dir: Path) -> list[Path]:
-    """Walk vault, yield all .md files, skipping IGNORE_DIRS."""
+    """Walk vault, yielding .md files except ignored directories/path prefixes."""
     results = []
     for md in sorted(vault_dir.rglob('*.md')):
-        parts = set(md.relative_to(vault_dir).parts)
+        relative = md.relative_to(vault_dir)
+        parts = set(relative.parts)
         if parts & IGNORE_DIRS:
+            continue
+        relative_posix = relative.as_posix()
+        if any(relative_posix == prefix or relative_posix.startswith(prefix + '/')
+               for prefix in IGNORE_PATH_PREFIXES):
             continue
         results.append(md)
     return results

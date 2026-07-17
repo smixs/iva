@@ -1,0 +1,46 @@
+[Unit]
+Description=IVA read-only Bitrix gateway
+Documentation=file:/usr/local/lib/iva-bitrix-gateway/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=iva-bitrix
+Group=iva
+SupplementaryGroups=iva-bitrix
+EnvironmentFile=/etc/iva-bitrix/bitrix.env
+Environment=BITRIX_GATEWAY_SOCKET=/run/iva-bitrix/gateway.sock
+ExecStart=/usr/bin/node /usr/local/lib/iva-bitrix-gateway/server.mjs
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=iva-bitrix
+RuntimeDirectoryMode=0750
+UMask=0007
+LimitCORE=0
+
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+ProcSubset=pid
+ReadWritePaths=/run/iva-bitrix
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

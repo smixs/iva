@@ -1,0 +1,11 @@
+[Unit]
+Description=Iva Bitrix24 read-only task sync (daily)
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=iva-bitrix-sync.service
+
+[Install]
+WantedBy=timers.target
