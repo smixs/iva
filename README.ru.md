@@ -69,12 +69,12 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 | Провайдер | Как платите |
 |---|---|
-| OpenCode Zen | API-ключ, ~$5/мес |
+| OpenCode Go | API-ключ, ~$5/мес |
 | Ollama Cloud | API-ключ, ~$20/мес |
 | OpenRouter | API-ключ, оплата по факту, 300+ моделей |
 | OpenAI (ChatGPT) | ваша подписка Plus/Pro, ключ не нужен |
 
-Модель по умолчанию deepseek-v4-pro, контекст 131k. На Zen выходит около $9/мес со всем ($5 модель плюс $4–5 VPS), без наценки; голос едет на бесплатном кредите Deepgram. Списки моделей, лимиты и матрица поиска: [docs/providers.md](docs/providers.md).
+Модель по умолчанию deepseek-v4-pro, контекст 131k. На Go выходит около $9/мес со всем ($5 модель плюс $4–5 VPS), без наценки; голос едет на бесплатном кредите Deepgram. Списки моделей, лимиты и матрица поиска: [docs/providers.md](docs/providers.md).
 
 ## Безопасность и приватность
 

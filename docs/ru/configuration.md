@@ -19,12 +19,12 @@ iva restart
 
 | Переменная | По умолчанию | Заметки |
 |---|---|---|
-| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud), `opencode` (OpenCode Zen), `openrouter` (OpenRouter) или `codex` (подписка OpenAI ChatGPT). |
+| `MODEL_PROVIDER` | `ollama` | `ollama` (Ollama Cloud), `opencode` (OpenCode Go), `openrouter` (OpenRouter) или `codex` (подписка OpenAI ChatGPT). |
 | `OLLAMA_API_KEY` | — | Ключ с ollama.com. |
 | `OLLAMA_MODEL` | `deepseek-v4-pro` | Любая модель вашего тарифа Ollama Cloud. |
 | `OLLAMA_CONTEXT_WINDOW` | `131072` | См. предупреждение ниже. |
 | `OPENCODE_API_KEY` | — | Ключ с opencode.ai/auth. |
-| `OPENCODE_MODEL` | `opencode-go/deepseek-v4-pro` | Любая модель Zen Go. |
+| `OPENCODE_MODEL` | `deepseek-v4-pro` | Любая модель Go, bare ID (напр. `kimi-k3`) — `iva config` показывает живой список. |
 | `OPENCODE_CONTEXT_WINDOW` | `131072` | То же предупреждение. |
 | `OPENROUTER_API_KEY` | — | Ключ с [openrouter.ai/keys](https://openrouter.ai/keys) (начинается с `sk-or-`). |
 | `OPENROUTER_MODEL` | `openai/gpt-5.1` | **Слаг** модели с [openrouter.ai/models](https://openrouter.ai/models), вид `vendor/model` (напр. `anthropic/claude-sonnet-4.5`). `iva config` шлёт живой тест-запрос, чтобы кривой слаг не проскочил. |

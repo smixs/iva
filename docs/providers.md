@@ -6,14 +6,14 @@ Iva runs on your server with your keys. Here is every external service it talks 
 
 | Provider | Price | Text models | Vision |
 |---|---|---|---|
-| **OpenCode Zen Go** | ~$5/mo | `deepseek-v4-pro` (default), `deepseek-v4-flash`, `kimi-k2.7-code`, `glm-5.2`, `qwen3.7` | `gemini-3-flash` |
+| **OpenCode Go** (ex-Zen) | ~$5/mo | ~20 models fetched live at setup — `deepseek-v4-pro` (default), `kimi-k3`, `kimi-k2.7-code`, `glm-5.2`, `qwen3.7-max`, `minimax-m3`… | `gemini-3-flash` |
 | **Ollama Cloud** | ~$20/mo | `deepseek-v4-pro` (default) | `gemma3:12b` |
 | **OpenRouter** | pay-as-you-go | 300+ models across vendors — pick any slug (`vendor/model`) | `google/gemini-2.5-flash` |
 | **OpenAI (ChatGPT subscription)** | your existing Plus/Pro/Team | the models your plan exposes (`gpt-5.x`, `-codex`), fetched live | same subscription (multimodal) |
 
 The first three are plain API keys; the last rides your personal OpenAI subscription:
 
-- 🔌 **OpenAI-compatible** — Zen, Ollama and OpenRouter share the same wire format, so switching is one line in `.env`
+- 🔌 **OpenAI-compatible** — Go, Ollama and OpenRouter share the same wire format, so switching is one line in `.env`
 - 🌍 **Any IP** — all answer from any server location, no region blocks
 - 💸 **No markup** — you pay the provider directly; Iva adds nothing on top
 
@@ -21,7 +21,7 @@ The first three are plain API keys; the last rides your personal OpenAI subscrip
 MODEL_PROVIDER=opencode   # or ollama / openrouter / codex, then `iva restart`
 ```
 
-Start with Zen: a quarter of the price, five models to switch between. Keys, model pick and context-window settings live in [configuration.md](configuration.md).
+Start with Go: a quarter of the price, ~20 models to switch between (the wizard pulls the live list, so new ones like `kimi-k3` appear on their own). Keys, model pick and context-window settings live in [configuration.md](configuration.md).
 
 ### OpenAI by ChatGPT subscription (`codex`)
 
@@ -76,7 +76,7 @@ Optional hybrid memory search adds one more key (Jina or DeepInfra embeddings) �
 | Service | Monthly |
 |---|---|
 | VPS | $4–5 |
-| OpenCode Zen Go | ~$5 |
+| OpenCode Go | ~$5 |
 | Deepgram voice | $0 — starter credit |
 | Web search (tavily) | $0 — free tier |
 | **Total** | **~$9/mo** |
