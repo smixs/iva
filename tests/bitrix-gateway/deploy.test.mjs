@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -183,4 +184,20 @@ test('root-owned secret audit fails closed without printing the webhook', async 
   assert.match(audit, /\/usr\/bin\/journalctl/u);
   assert.match(audit, /exact-secret-clear:repo-vault-data/u);
   assert.doesNotMatch(audit, /print\(\s*(?:secret|secret_text|webhook_lines)\b|shell=True/iu);
+});
+
+test('admin manifest hashes match canonical LF source bytes', async () => {
+  const admin = await readFile(new URL('admin-install.sh', deployRoot), 'utf8');
+  const manifest = admin.match(/<<'MANIFEST'\n(?<body>[\s\S]+?)\nMANIFEST/u);
+  assert.ok(manifest?.groups?.body);
+
+  const repoRoot = new URL('../../', import.meta.url);
+  for (const line of manifest.groups.body.split('\n')) {
+    const match = line.match(/^(?<hash>[0-9a-f]{64})  (?<path>.+)$/u);
+    assert.ok(match?.groups);
+    const source = await readFile(new URL(match.groups.path, repoRoot), 'utf8');
+    const canonical = source.replace(/\r\n/gu, '\n');
+    const actual = createHash('sha256').update(canonical, 'utf8').digest('hex');
+    assert.equal(actual, match.groups.hash, match.groups.path);
+  }
 });

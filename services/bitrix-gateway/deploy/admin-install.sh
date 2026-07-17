@@ -226,15 +226,15 @@ trap 'exit 143' TERM
   cd "$LIVE_REPO"
   /usr/bin/sha256sum -c --strict <<'MANIFEST'
 04794f61beefaed1c71fe8690c1e762df28846c863e59c3ef94815760295251c  services/bitrix-gateway/errors.mjs
-9f821fae615612f01acc26b36714eb38cd1e2ae5d7abda758aeee06220d2a2ed  services/bitrix-gateway/normalize.mjs
+53d0d35c1d6a657b1377af0a7982f70baaf1f8f43aae387381e89bc665098694  services/bitrix-gateway/normalize.mjs
 3dfa764235f3c7cd670337d5ebb85278d80de098d67bcefdecf67d54fe299dcf  services/bitrix-gateway/policy.mjs
-e7d82b5ea4e5639e1cf2cc4fa2bfbb78ab371dd54f5fe348574e17a3166f8136  services/bitrix-gateway/client.mjs
+1a8ae1d30bfddd0121d0544f232d9c0ba914d8f3eddbbd50708353a30cf1988e  services/bitrix-gateway/client.mjs
 f0fd2e1aec1437708a515815c66b1d8e28e45dcbf938c952e751b7f3f8eeb441  services/bitrix-gateway/gateway.mjs
 6a4fdc6ea06f155b67e35e67949f78ea250c8078543ef9f178bdb75789d2ffac  services/bitrix-gateway/server.mjs
 d93c7c247c66b7dc1257def62363197fd1a6b9fafa5c6f2dd2346d9b9644b753  services/bitrix-gateway/index.mjs
-5b4d5017be00e8be920304bee2bb0f2f05ec110ddf728db196b6e0c8ef78bfcb  services/bitrix-gateway/preflight-read-state.mjs
+9731bb11e6eb88dade7a4266e95767932661c29bced54cc7dc88b5206f585757  services/bitrix-gateway/preflight-read-state.mjs
 4ff3a1b5b01dfc0bae4335a2fec72060d9f00d86c3db3fc1534cf2f60075a33b  services/bitrix-gateway/deploy/audit-secret.py
-5d964194f8ecab9387411b4ce13afacb44d0cb154f8d9402d035d637bdaef0e1  services/bitrix-gateway/deploy/iva-bitrix-gateway.service
+60b1784f58f085a33643dbd04a300dca6491cc36cfcae220efd74d0f00c58b13  services/bitrix-gateway/deploy/iva-bitrix-gateway.service
 de94a15b50adc351e2106d6c9b1ece412c55402238231a7ba5fa46ccbb24e3e3  services/bitrix-gateway/deploy/install.sh
 a7a4d724348e835349fb513b70c368d5afaf54582845a372e384bb99218a6c00  services/bitrix-gateway/deploy/install-and-start.sh
 MANIFEST
