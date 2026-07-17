@@ -5,6 +5,7 @@ export PATH
 
 UNIT=iva-bitrix-gateway.service
 UNIT_FILE=/etc/systemd/system/iva-bitrix-gateway.service
+SOCKET=/run/iva-bitrix/gateway.sock
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CLEANUP_NEEDED=1
 
@@ -56,12 +57,24 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 "$SCRIPT_DIR/install.sh"
-systemctl cat "$UNIT"
+systemctl cat --no-pager "$UNIT"
 systemctl enable "$UNIT"
 systemctl restart "$UNIT"
 
-health_json=$(/usr/bin/curl --fail --silent --show-error \
-  --unix-socket /run/iva-bitrix/gateway.sock http://localhost/health) ||
+socket_attempts=0
+while [ ! -S "$SOCKET" ]; do
+  systemctl is-active --quiet "$UNIT" || {
+    systemctl status --no-pager --full "$UNIT" >&2 || true
+    fail 'gateway service stopped before creating its socket'
+  }
+  socket_attempts=$((socket_attempts + 1))
+  [ "$socket_attempts" -lt 40 ] || fail 'gateway socket did not appear within 10 seconds'
+  sleep 0.25
+done
+unset socket_attempts
+
+health_json=$(/usr/bin/curl --fail --silent --show-error --connect-timeout 2 --max-time 30 \
+  --unix-socket "$SOCKET" http://localhost/health) ||
   fail 'gateway health request failed'
 printf '%s' "$health_json" |
   /usr/bin/python3 -c \

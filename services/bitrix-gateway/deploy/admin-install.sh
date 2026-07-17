@@ -240,7 +240,7 @@ d93c7c247c66b7dc1257def62363197fd1a6b9fafa5c6f2dd2346d9b9644b753  services/bitri
 4ff3a1b5b01dfc0bae4335a2fec72060d9f00d86c3db3fc1534cf2f60075a33b  services/bitrix-gateway/deploy/audit-secret.py
 60b1784f58f085a33643dbd04a300dca6491cc36cfcae220efd74d0f00c58b13  services/bitrix-gateway/deploy/iva-bitrix-gateway.service
 de94a15b50adc351e2106d6c9b1ece412c55402238231a7ba5fa46ccbb24e3e3  services/bitrix-gateway/deploy/install.sh
-a7a4d724348e835349fb513b70c368d5afaf54582845a372e384bb99218a6c00  services/bitrix-gateway/deploy/install-and-start.sh
+beed237dcd71aeb9d7e2859d5e6d0d405bdcdcc86f37337406dadcd00761060c  services/bitrix-gateway/deploy/install-and-start.sh
 MANIFEST
 )
 

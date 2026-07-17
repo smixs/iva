@@ -105,7 +105,8 @@ test('transactional root wrapper restarts current code and removes only a proven
   const installer = wrapper.indexOf('"$SCRIPT_DIR/install.sh"');
   const enable = wrapper.indexOf('systemctl enable "$UNIT"', installer);
   const restart = wrapper.indexOf('systemctl restart "$UNIT"', enable);
-  const health = wrapper.indexOf('health_json=$(/usr/bin/curl --fail --silent --show-error', restart);
+  const socketWait = wrapper.indexOf('while [ ! -S "$SOCKET" ]', restart);
+  const health = wrapper.indexOf('health_json=$(/usr/bin/curl --fail --silent --show-error', socketWait);
   const curlFailure = wrapper.indexOf("fail 'gateway health request failed'", health);
   const parseHealth = wrapper.indexOf('/usr/bin/python3 -c', curlFailure);
   const commit = wrapper.indexOf('CLEANUP_NEEDED=0', parseHealth);
@@ -117,9 +118,15 @@ test('transactional root wrapper restarts current code and removes only a proven
   assert.ok(stop < activeState && activeState < jobState && jobState < nonLiveCase);
   assert.ok(nonLiveCase < removeUnit && removeUnit < daemonReload);
   assert.match(wrapper, /if systemctl disable "\$UNIT"[\s\S]*disable_ok=1/u);
-  assert.ok(installer >= 0 && enable < restart && restart < health);
+  assert.ok(installer >= 0 && enable < restart && restart < socketWait && socketWait < health);
+  assert.match(wrapper, /systemctl cat --no-pager "\$UNIT"/u);
+  assert.match(wrapper, /systemctl is-active --quiet "\$UNIT"/u);
+  assert.match(wrapper, /socket_attempts=\$\(\(socket_attempts \+ 1\)\)/u);
+  assert.match(wrapper, /\[ "\$socket_attempts" -lt 40 \]/u);
+  assert.match(wrapper, /sleep 0\.25/u);
   assert.ok(health < curlFailure && curlFailure < parseHealth && parseHealth < commit);
-  assert.match(wrapper, /--unix-socket \/run\/iva-bitrix\/gateway\.sock http:\/\/localhost\/health/u);
+  assert.match(wrapper, /--connect-timeout 2 --max-time 30/u);
+  assert.match(wrapper, /--unix-socket "\$SOCKET" http:\/\/localhost\/health/u);
   assert.match(wrapper, /data\.get\("ok"\) is True and data\.get\("ready"\) is True/u);
   assert.doesNotMatch(wrapper, /daemon-reload \|\| true|enable --now|BITRIX_WEBHOOK_URL|sudo\s+(?:bash|sh)\s+-c/iu);
 });
