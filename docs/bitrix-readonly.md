@@ -67,6 +67,16 @@ AUDITED_SOURCE_ROOT="${AUDITED_SOURCE_ROOT:?set the reviewed worktree path}"
 LIVE_REPO="${LIVE_REPO:-/home/iva/iva}"
 TARGET_BRANCH="${TARGET_BRANCH:?set the primary-checkout target branch}"
 NODE24_BIN_DIR="${NODE24_BIN_DIR:?set the verified Node 24 bin directory}"
+NODE24="$NODE24_BIN_DIR/node"
+NPM24="$NODE24_BIN_DIR/npm"
+
+[ -x "$NODE24" ] && [ -x "$NPM24" ] || { echo 'pinned Node 24 runtime is missing' >&2; exit 1; }
+[ "$("$NODE24" -p 'process.versions.node.split(".")[0]')" = 24 ] || {
+  echo 'pinned runtime is not Node 24' >&2
+  exit 1
+}
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" --version >/dev/null
+
 
 printf '%s\n' "$EXPECTED_AUDITED_COMMIT" |
   /usr/bin/grep -Eq '^[0-9a-f]{40}$' || { echo 'invalid audited commit hash' >&2; exit 1; }
@@ -98,9 +108,9 @@ iva_guard_recover_app() {
     /usr/bin/git switch --detach "$IVA_OLD_HEAD" || return 1
   fi
   [ "$(/usr/bin/git rev-parse HEAD)" = "$IVA_OLD_HEAD" ] || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" npm ci || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" npm run build || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" node --check scripts/telegram-poll.mjs || return 1
+  PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" ci || return 1
+  PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run build || return 1
+  "$NODE24" --check scripts/telegram-poll.mjs || return 1
   [ "$(/usr/bin/git rev-parse --show-toplevel)" = "$(pwd -P)" ] || return 1
   [ "$(/usr/bin/git rev-parse HEAD)" = "$IVA_OLD_HEAD" ] || return 1
   [ -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)" ] || return 1
@@ -117,11 +127,11 @@ IVA_GUARD_APP_READY=0
 cd "$LIVE_REPO"
 /usr/bin/git switch -- "$TARGET_BRANCH"
 [ "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_AUDITED_COMMIT" ]
-PATH="$NODE24_BIN_DIR:$PATH" npm ci
-PATH="$NODE24_BIN_DIR:$PATH" npm run typecheck
-PATH="$NODE24_BIN_DIR:$PATH" npm run test:bitrix
-PATH="$NODE24_BIN_DIR:$PATH" npm run build
-PATH="$NODE24_BIN_DIR:$PATH" node --check scripts/telegram-poll.mjs
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" ci
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run typecheck
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run test:bitrix
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run build
+"$NODE24" --check scripts/telegram-poll.mjs
 
 # Re-bind the privileged source after the last model-writable command.
 [ "$(/usr/bin/git rev-parse --show-toplevel)" = "$(pwd -P)" ]
@@ -217,7 +227,14 @@ disabling terminal echo succeeded:
 /usr/bin/sudo /bin/sh -ceu '
   tty=/dev/tty
   [ -r "$tty" ] && [ -w "$tty" ]
-  trap "/usr/bin/stty echo < /dev/tty" EXIT HUP INT TERM
+  restore_echo() {
+    trap - EXIT HUP INT TERM
+    /usr/bin/stty echo < "$tty"
+  }
+  trap restore_echo EXIT
+  trap "exit 129" HUP
+  trap "exit 130" INT
+  trap "exit 143" TERM
   /usr/bin/stty -echo < "$tty"
   printf "Paste two env lines, then Ctrl-D: " > "$tty"
   /usr/bin/cat < "$tty" > /etc/iva-bitrix/bitrix.env
@@ -535,6 +552,16 @@ CURRENT_DEPLOYED_COMMIT="${CURRENT_DEPLOYED_COMMIT:?set the deployed full commit
 ROLLBACK_COMMIT="${ROLLBACK_COMMIT:?set the verified old full commit}"
 ROLLBACK_BRANCH="${ROLLBACK_BRANCH:?set the verified old local branch}"
 NODE24_BIN_DIR="${NODE24_BIN_DIR:?set the verified Node 24 bin directory}"
+NODE24="$NODE24_BIN_DIR/node"
+NPM24="$NODE24_BIN_DIR/npm"
+
+[ -x "$NODE24" ] && [ -x "$NPM24" ] || { echo 'pinned Node 24 runtime is missing' >&2; exit 1; }
+[ "$("$NODE24" -p 'process.versions.node.split(".")[0]')" = 24 ] || {
+  echo 'pinned runtime is not Node 24' >&2
+  exit 1
+}
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" --version >/dev/null
+
 
 printf '%s\n%s\n' "$CURRENT_DEPLOYED_COMMIT" "$ROLLBACK_COMMIT" |
   /usr/bin/grep -Ex '[0-9a-f]{40}' >/dev/null
@@ -554,9 +581,9 @@ iva_guard_recover_app() {
     /usr/bin/git switch --detach "$IVA_PRE_ROLLBACK_HEAD" || return 1
   fi
   [ "$(/usr/bin/git rev-parse HEAD)" = "$IVA_PRE_ROLLBACK_HEAD" ] || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" npm ci || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" npm run build || return 1
-  PATH="$NODE24_BIN_DIR:$PATH" node --check scripts/telegram-poll.mjs || return 1
+  PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" ci || return 1
+  PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run build || return 1
+  "$NODE24" --check scripts/telegram-poll.mjs || return 1
   [ "$(/usr/bin/git rev-parse --show-toplevel)" = "$(pwd -P)" ] || return 1
   [ "$(/usr/bin/git rev-parse HEAD)" = "$IVA_PRE_ROLLBACK_HEAD" ] || return 1
   [ -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)" ] || return 1
@@ -584,10 +611,10 @@ IVA_GUARD_APP_READY=0
 cd "$LIVE_REPO"
 /usr/bin/git switch -- "$ROLLBACK_BRANCH"
 [ "$(/usr/bin/git rev-parse HEAD)" = "$ROLLBACK_COMMIT" ]
-PATH="$NODE24_BIN_DIR:$PATH" npm ci
-PATH="$NODE24_BIN_DIR:$PATH" npm run typecheck
-PATH="$NODE24_BIN_DIR:$PATH" npm run build
-PATH="$NODE24_BIN_DIR:$PATH" node --check scripts/telegram-poll.mjs
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" ci
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run typecheck
+PATH="$NODE24_BIN_DIR:$PATH" "$NPM24" run build
+"$NODE24" --check scripts/telegram-poll.mjs
 [ "$(/usr/bin/git rev-parse --show-toplevel)" = "$(pwd -P)" ]
 [ "$(/usr/bin/git rev-parse HEAD)" = "$ROLLBACK_COMMIT" ]
 [ -z "$(/usr/bin/git status --porcelain=v1 --untracked-files=all)" ]
