@@ -346,39 +346,8 @@ export class BitrixReadOnlyGateway {
         category: 'invalid_response',
       });
     }
-    const messages = [];
-    let start = 0;
-    const seenStarts = new Set();
-    for (let page = 0; page < this.maxPages; page += 1) {
-      const startKey = String(start);
-      if (seenStarts.has(startKey)) {
-        throw new GatewayError('BITRIX_PAGINATION_INVALID', 'Bitrix returned a repeated legacy-comment cursor.', {
-          status: 502,
-          category: 'invalid_response',
-        });
-      }
-      seenStarts.add(startKey);
-      const response = await this.client.getLegacyComments({
-        TASKID: legacyTaskId,
-        ORDER: { POST_DATE: 'ASC', ID: 'ASC' },
-        start,
-      }, resolution);
-      messages.push(...normalizeLegacyComments(response));
-      const next = responseNext(response);
-      if (next === null) return dedupeAndSortMessages(messages);
-      const normalizedNext = Number(next);
-      if (!Number.isSafeInteger(normalizedNext) || normalizedNext < 0) {
-        throw new GatewayError('BITRIX_PAGINATION_INVALID', 'Bitrix returned an invalid legacy-comment cursor.', {
-          status: 502,
-          category: 'invalid_response',
-        });
-      }
-      start = normalizedNext;
-    }
-    throw new GatewayError('BITRIX_PAGINATION_LIMIT', 'The legacy Bitrix discussion exceeded the pagination safety limit.', {
-      status: 502,
-      category: 'invalid_response',
-    });
+    const response = await this.client.getLegacyComments({ TASKID: legacyTaskId }, resolution);
+    return dedupeAndSortMessages(normalizeLegacyComments(response));
   }
 
   #assertTaskId(taskId) {

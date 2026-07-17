@@ -243,13 +243,7 @@ test('legacy comments run only after CHAT_ID, TASKS_TASK, and TASKS resolve null
         tasksNull: true,
         commentsIndicated: true,
       });
-      if (params.start === 0) {
-        return {
-          result: [{ ID: '2', AUTHOR_ID: '5', AUTHOR_NAME: 'Person', POST_DATE: '2026-07-16', POST_MESSAGE: 'Second' }],
-          next: 50,
-        };
-      }
-      assert.equal(params.start, 50);
+      assert.deepEqual(Object.keys(params), ['TASKID']);
       return { result: [
         { ID: '2', AUTHOR_ID: '5', AUTHOR_NAME: 'Person', POST_DATE: '2026-07-16', POST_MESSAGE: 'Second' },
         { ID: '1', AUTHOR_ID: '5', AUTHOR_NAME: 'Person', POST_DATE: '', POST_MESSAGE: 'First' },
@@ -265,7 +259,7 @@ test('legacy comments run only after CHAT_ID, TASKS_TASK, and TASKS resolve null
     client.calls.filter((call) => call.method === 'im.chat.get' || call.kind === 'legacy').map((call) => (
       call.kind === 'legacy' ? 'legacy' : call.params.ENTITY_TYPE
     )),
-    ['TASKS_TASK', 'TASKS', 'legacy', 'legacy'],
+    ['TASKS_TASK', 'TASKS', 'legacy'],
   );
 });
 
