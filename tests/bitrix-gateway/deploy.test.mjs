@@ -150,8 +150,8 @@ test('admin installer uses a pinned root copy, guards IVA units, and invalidates
   assert.match(admin, /\[\[ \$# -eq 1 && "\$EXPECTED_COMMIT" =~ \^\[0-9a-f\]\{40\}\$ \]\]/u);
   assert.match(admin, /\[\[ \$\(\/usr\/bin\/id -u\) -eq 0 \]\]/u);
   assert.match(admin, /A dedicated interactive TTY is required/u);
-  assert.match(admin, /ROOT_COPY=\/run\/iva-bitrix-admin-install/u);
-  assert.match(admin, /fixed root-owned copy from \/run/u);
+  assert.match(admin, /ROOT_COPY=\/usr\/local\/lib\/iva-bitrix-admin\/install/u);
+  assert.match(admin, /fixed root-owned copy from \/usr\/local\/lib\/iva-bitrix-admin/u);
   assert.match(admin, /root:root 700/u);
   assert.match(admin, /A non-root SUDO_USER is required/u);
   assert.match(admin, /\/usr\/sbin\/runuser -u "\$IVA_USER"/u);

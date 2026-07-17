@@ -6,7 +6,7 @@ export PATH
 umask 077
 
 LIVE_REPO=/home/iva/iva
-ROOT_COPY=/run/iva-bitrix-admin-install
+ROOT_COPY=/usr/local/lib/iva-bitrix-admin/install
 IVA_USER=iva
 IVA_HOME=/home/iva
 STATE_FILE=/run/iva-bitrix-admin-active-units
@@ -30,12 +30,12 @@ fail() {
 }
 
 [[ $# -eq 1 && "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
-  fail 'Usage: sudo /run/iva-bitrix-admin-install <reviewed-40-character-commit>' 2
+  fail 'Usage: sudo /usr/local/lib/iva-bitrix-admin/install <reviewed-40-character-commit>' 2
 [[ $(/usr/bin/id -u) -eq 0 ]] || fail 'Run this helper through sudo as the admin account.' 2
 [[ -t 0 && -r /dev/tty && -w /dev/tty ]] || fail 'A dedicated interactive TTY is required.' 2
 SELF_REAL=$(/usr/bin/readlink -f -- "$0")
 [[ "$SELF_REAL" == "$ROOT_COPY" && -f "$ROOT_COPY" && ! -L "$ROOT_COPY" ]] ||
-  fail 'Run only the fixed root-owned copy from /run.' 2
+  fail 'Run only the fixed root-owned copy from /usr/local/lib/iva-bitrix-admin.' 2
 [[ $(/usr/bin/stat -c '%U:%G %a' "$ROOT_COPY") == 'root:root 700' ]] ||
   fail 'The fixed admin helper copy must be root:root mode 700.' 2
 [[ -n ${SUDO_USER:-} && ${SUDO_USER} != root ]] || fail 'A non-root SUDO_USER is required.' 2
