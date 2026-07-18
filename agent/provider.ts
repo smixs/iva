@@ -52,6 +52,14 @@ const PROVIDERS = {
 export const providerName = PROVIDER;
 export const providerConfig = PROVIDERS[PROVIDER as keyof typeof PROVIDERS] ?? PROVIDERS.ollama;
 
+// THINKING_EFFORT (.env, пишут /model и /think в Telegram): reasoning-усилие модели.
+// Нативно применяется только на codex (providerOptions.openai.reasoningEffort → reasoning.effort
+// в теле /responses, см. forceStoreFalse). Для остальных провайдеров — сохранённый профиль без
+// рантайм-эффекта. Невалидное/пустое значение молча игнорируем (эквивалент «не задан»).
+const EFFORT_LEVELS = ["minimal", "low", "medium", "high"];
+const effortRaw = (process.env.THINKING_EFFORT ?? "").toLowerCase();
+export const thinkingEffort = EFFORT_LEVELS.includes(effortRaw) ? effortRaw : undefined;
+
 // --- Codex (подписка ChatGPT): Responses API через @ai-sdk/openai ----------------------------
 // Кастомный fetch: перед КАЖДЫМ запросом подставляет свежий Bearer + ChatGPT-Account-ID
 // (getAccessToken рефрешит истёкший токен) и форсит store:false — бэкенд подписки stateless,
@@ -93,7 +101,11 @@ const forceStoreFalse: LanguageModelMiddleware = {
       ...params,
       providerOptions: {
         ...params.providerOptions,
-        openai: { ...params.providerOptions?.openai, store: false },
+        openai: {
+          ...params.providerOptions?.openai,
+          store: false,
+          ...(thinkingEffort ? { reasoningEffort: thinkingEffort } : {}),
+        },
       },
     };
   },
