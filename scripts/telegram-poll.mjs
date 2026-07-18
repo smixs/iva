@@ -14,6 +14,9 @@ import { execFile } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/usage.mjs";
+import { readEnvValues, upsertEnv } from "./lib/env-file.mjs";
+import { CATALOG, EFFORTS, fetchModels, checkKey } from "./lib/model-catalog.mjs";
+import { authFilePath, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOW_DIR = join(ROOT, ".workflow-data");
@@ -24,6 +27,10 @@ const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN;
 const PORT = process.env.IVA_PORT ?? "8723";
 const HOST = (process.env.ASSISTANT_HOST ?? `http://127.0.0.1:${PORT}`).replace(/\/$/, "");
 const DATA_DIR = process.env.ASSISTANT_DATA_DIR ?? "data";
+// Absolute paths for the /model wizard: .env is read fresh (this process's env goes
+// stale after the wizard edits the file) and data/ holds codex-auth.json.
+const ENV_PATH = join(ROOT, ".env");
+const DATA_DIR_ABS = DATA_DIR.startsWith("/") ? DATA_DIR : join(ROOT, DATA_DIR);
 const ROUTE = `${HOST}/eve/v1/telegram`;
 const API = `https://api.telegram.org/bot${TOKEN}`;
 const OFFSET_FILE = join(DATA_DIR, "telegram-offset.json");
@@ -46,6 +53,8 @@ const HELP = [
   "/tasks — show tasks",
   "/digest — morning digest",
   "/usage [today|week|month|by-model|by-source] — token usage",
+  "/model — switch AI provider/model/thinking effort",
+  "/think — set thinking effort",
 ].join("\n");
 
 if (!TOKEN) {
@@ -254,19 +263,286 @@ async function handleUpdateCallback(cq) {
   return true;
 }
 
+// ── /model & /think wizard (out-of-band, inline keyboards) ─────────────────
+// State lives in memory keyed by `${chatId}:${userId}`; each flow edits ONE message
+// (like /update). A bridge restart loses state — stale button taps get "диалог устарел".
+// Config is always read fresh from .env: this process's env goes stale after writes.
+const wizards = new Map();
+const WIZARD_TTL_MS = 15 * 60 * 1000; // matches the codex device-code lifetime
+let wizardGen = 0; // bumped on every wizard (re)start — stale async continuations check it
+
+const EFFORT_SET = new Set(EFFORTS);
+const effortLabel = (v) => (v && EFFORT_SET.has(v) ? v : "не задан");
+const wizKey = (chatId, userId) => `${chatId}:${userId}`;
+
+async function currentConfig() {
+  const env = await readEnvValues(ENV_PATH);
+  const provider = CATALOG[env.MODEL_PROVIDER] ? env.MODEL_PROVIDER : "ollama";
+  const cat = CATALOG[provider];
+  return {
+    provider,
+    model: env[cat.modelVar] || cat.def,
+    effort: (env.THINKING_EFFORT ?? "").toLowerCase(),
+  };
+}
+
+function getWizard(chatId, userId) {
+  const k = wizKey(chatId, userId);
+  const st = wizards.get(k);
+  if (st && Date.now() - st.createdAt > WIZARD_TTL_MS) {
+    wizards.delete(k);
+    return null;
+  }
+  return st ?? null;
+}
+
+// Replaces any pending wizard of this user: the old flow's async continuations
+// (codex login) see a stale gen and discard themselves.
+function newWizard(chatId, userId, flow) {
+  const st = {
+    flow, chatId, userId, gen: ++wizardGen, createdAt: Date.now(),
+    msgId: null, provider: null, models: null, model: null, effort: null, awaitKey: false,
+  };
+  wizards.set(wizKey(chatId, userId), st);
+  return st;
+}
+
+// Edit the wizard's single message in place (send it the first time).
+async function wizScreen(st, text, rows) {
+  const reply_markup = rows ? { inline_keyboard: rows } : undefined;
+  if (st.msgId) {
+    const r = await tg("editMessageText", { chat_id: st.chatId, message_id: st.msgId, text, reply_markup });
+    if (r.ok) return;
+    // edit failed (message too old / deleted) — fall through to a fresh message
+  }
+  const r = await tg("sendMessage", { chat_id: st.chatId, text, reply_markup });
+  if (r.ok) st.msgId = r.result.message_id;
+}
+
+const btn = (text, callback_data) => ({ text, callback_data });
+const CANCEL_ROW = [btn("Отмена", "iva_model:cancel")];
+
+function effortRows(ns, withKeep) {
+  return [
+    EFFORTS.map((e) => btn(e, `${ns}:eff:${e}`)),
+    [btn("Не задавать", `${ns}:eff:unset`), withKeep ? btn("Оставить", `${ns}:keep`) : CANCEL_ROW[0]],
+  ];
+}
+
+async function handleModelCmd(chatId, from) {
+  const { provider, model, effort } = await currentConfig();
+  const st = newWizard(chatId, from, "model");
+  await wizScreen(st, `Сейчас: провайдер ${provider} · модель ${model} · размышления: ${effortLabel(effort)}.`, [
+    [btn("Сменить", "iva_model:chg"), btn("Оставить", "iva_model:keep")],
+  ]);
+}
+
+async function handleThinkCmd(chatId, from) {
+  const { effort } = await currentConfig();
+  const st = newWizard(chatId, from, "think");
+  await wizScreen(st, `Уровень размышлений: ${effortLabel(effort)}.`, effortRows("iva_think", true));
+}
+
+async function showProviderScreen(st) {
+  const rows = Object.entries(CATALOG).map(([id, c]) => [btn(c.label, `iva_model:prov:${id}`)]);
+  rows.push(CANCEL_ROW);
+  await wizScreen(st, "Выбери провайдера:", rows);
+}
+
+async function pickProvider(st, provider) {
+  st.provider = provider;
+  const cat = CATALOG[provider];
+  if (cat.auth === "oauth") {
+    if (!existsSync(authFilePath(DATA_DIR_ABS))) return startCodexLogin(st);
+    return showModelScreen(st);
+  }
+  const env = await readEnvValues(ENV_PATH);
+  if (!env[cat.keyVar]) {
+    st.awaitKey = true;
+    await wizScreen(st,
+      `Нужен API-ключ ${cat.label}. Пришли его следующим сообщением — я сразу удалю его из чата.\n` +
+      "Если через пару секунд не подтвержу получение — не отправляй повторно, начни заново с /model.",
+      [CANCEL_ROW]);
+    return;
+  }
+  return showModelScreen(st);
+}
+
+async function showModelScreen(st) {
+  const cat = CATALOG[st.provider];
+  const env = await readEnvValues(ENV_PATH);
+  let models;
+  try {
+    models = await fetchModels(st.provider, cat.keyVar ? env[cat.keyVar] : undefined, { dataDir: DATA_DIR_ABS });
+  } catch {
+    models = cat.models; // live list rejected the key — static list keeps the wizard usable
+  }
+  st.models = models.slice(0, 24); // inline-keyboard sanity cap
+  const rows = st.models.map((m, i) => [btn(m, `iva_model:m:${i}`)]);
+  rows.push(CANCEL_ROW);
+  await wizScreen(st, `Модель (${cat.label}):`, rows);
+}
+
+// Codex device-link login. runDeviceCodeLogin polls up to 15 min — deliberately NOT
+// awaited, so the getUpdates loop keeps running; the continuation checks gen and
+// discards itself if the wizard was cancelled/replaced meanwhile.
+function startCodexLogin(st) {
+  const myGen = st.gen;
+  const k = wizKey(st.chatId, st.userId);
+  // Serialize device-code log lines (link, one-time code) into ordered chat messages.
+  let q = Promise.resolve();
+  const tlog = (m) => { q = q.then(() => reply(st.chatId, String(m).trim())); };
+  runDeviceCodeLogin({ dataDir: DATA_DIR_ABS, lang: "ru", log: tlog })
+    .then(() => {
+      if (wizards.get(k)?.gen !== myGen) return;
+      return showModelScreen(st);
+    })
+    .catch((e) => {
+      if (wizards.get(k)?.gen !== myGen) return;
+      wizards.delete(k);
+      return reply(st.chatId, "Вход не удался: " + e.message + "\nОтправь /model, чтобы попробовать снова.");
+    });
+  return wizScreen(st, "Жду вход по подписке OpenAI — ссылка и код ниже. Код живёт 15 минут.", [CANCEL_ROW]);
+}
+
+// Plain-text message while the wizard awaits an API key. Deleted from the chat FIRST;
+// the key value must never reach eve, log(), reply() or any error text.
+async function handleKeyMessage(msg, st) {
+  const chatId = msg.chat.id;
+  const del = await tg("deleteMessage", { chat_id: chatId, message_id: msg.message_id });
+  if (!del.ok) await reply(chatId, "Не смог удалить сообщение с ключом — удали его вручную.");
+  const key = msg.text.trim();
+  const cat = CATALOG[st.provider];
+  const err = await checkKey(st.provider, key);
+  if (err) {
+    await wizScreen(st, `Ключ не принят (${err}). Пришли другой ключ или нажми «Отмена».`, [CANCEL_ROW]);
+    return true;
+  }
+  st.awaitKey = false;
+  await upsertEnv(ENV_PATH, { [cat.keyVar]: key }); // persist immediately — the chat copy is gone
+  await showModelScreen(st);
+  return true;
+}
+
+async function saveWizard(st) {
+  const updates = { THINKING_EFFORT: st.effort }; // null ⇒ drop the line ("не задан")
+  if (st.flow === "model") {
+    updates.MODEL_PROVIDER = st.provider;
+    updates[CATALOG[st.provider].modelVar] = st.model;
+  }
+  await upsertEnv(ENV_PATH, updates);
+}
+
+async function showSaved(st) {
+  const { provider, model, effort } = await currentConfig();
+  let text = `Сохранил: ${provider} · ${model} · размышления: ${effortLabel(effort)}.`;
+  if (EFFORT_SET.has(effort) && provider !== "codex") {
+    text += "\nУровень размышлений сохранён в профиле, но нативно применяется только на codex.";
+  }
+  text += "\nПерезапустить агента, чтобы применить?";
+  await wizScreen(st, text, [[btn("Перезапустить сейчас", "iva_model:rs:now"), btn("Позже", "iva_model:rs:later")]]);
+}
+
+// Inline-button taps for /model and /think. Mirrors handleUpdateCallback: ack the
+// spinner first, swallow untrusted taps, then dispatch on the wizard state.
+async function handleWizardCallback(cq) {
+  const from = String(cq.from?.id ?? "");
+  const chatId = cq.message?.chat?.id;
+  const messageId = cq.message?.message_id;
+  await tg("answerCallbackQuery", { callback_query_id: cq.id });
+  if (ALLOWED.size === 0 || !ALLOWED.has(from)) return true; // swallow untrusted taps
+  const action = cq.data.replace(/^iva_(model|think):/, "");
+  const st = getWizard(chatId, from);
+  // No state (bridge restarted / TTL) or a tap on an older wizard message → stale.
+  if (!st || (st.msgId && messageId && st.msgId !== messageId)) {
+    await tg("editMessageText", { chat_id: chatId, message_id: messageId, text: "Диалог устарел — отправь /model заново." });
+    return true;
+  }
+  if (action === "keep") {
+    wizards.delete(wizKey(chatId, from));
+    const text = st.flow === "think" ? "Оставил текущий уровень размышлений." : "Оставил текущую конфигурацию.";
+    await tg("editMessageText", { chat_id: chatId, message_id: messageId, text });
+    return true;
+  }
+  if (action === "cancel") {
+    wizards.delete(wizKey(chatId, from));
+    await tg("editMessageText", { chat_id: chatId, message_id: messageId, text: "Отменено." });
+    return true;
+  }
+  if (action === "chg") {
+    await showProviderScreen(st);
+    return true;
+  }
+  if (action.startsWith("prov:")) {
+    const p = action.slice("prov:".length);
+    if (CATALOG[p]) await pickProvider(st, p);
+    return true;
+  }
+  if (action.startsWith("m:")) {
+    const m = st.models?.[Number(action.slice("m:".length))];
+    if (!m) return true;
+    st.model = m;
+    await wizScreen(st, "Уровень размышлений:", effortRows("iva_model", false));
+    return true;
+  }
+  if (action.startsWith("eff:")) {
+    const v = action.slice("eff:".length);
+    st.effort = EFFORT_SET.has(v) ? v : null; // "unset" and anything unknown ⇒ drop
+    try {
+      await saveWizard(st);
+    } catch (e) {
+      wizards.delete(wizKey(chatId, from));
+      await wizScreen(st, "Не удалось сохранить .env: " + e.message);
+      return true;
+    }
+    await showSaved(st);
+    return true;
+  }
+  if (action === "rs:later") {
+    wizards.delete(wizKey(chatId, from));
+    await wizScreen(st, "Сохранил. Применится после перезапуска (/restart).");
+    return true;
+  }
+  if (action === "rs:now") {
+    wizards.delete(wizKey(chatId, from));
+    await wizScreen(st, "Перезапускаю агента… (~30 сек). Текущий диалог продолжится после перезапуска.");
+    // Plain restart, NOT restartAgent(): a config change is not a recovery — parked
+    // conversations in .workflow-data survive and resume under the new model.
+    const ok = await sc("restart", "iva.service");
+    if (ok) {
+      const { provider, model, effort } = await currentConfig();
+      await reply(chatId, `Готово — новая конфигурация активна: ${provider} · ${model} · размышления: ${effortLabel(effort)}.`);
+    } else {
+      await reply(chatId, "Не удалось перезапустить (systemctl). Проверь сервис на сервере.");
+    }
+    return true;
+  }
+  return true;
+}
+
 // Control commands are handled by the BRIDGE (out-of-band) — they work even if the agent is stuck.
 // Trusted IDs only. Returns true if the command was handled (we do NOT deliver it to eve).
 async function handleControl(update) {
-  // /update inline-button taps (Update / Skip) — bridge-owned, not an eve HITL callback.
+  // Bridge-owned inline-button taps (/update, /model, /think) — not eve HITL callbacks.
   const cq = update.callback_query;
-  if (cq && typeof cq.data === "string" && cq.data.startsWith("iva_update:")) {
-    return handleUpdateCallback(cq);
+  if (cq && typeof cq.data === "string") {
+    if (cq.data.startsWith("iva_update:")) return handleUpdateCallback(cq);
+    if (cq.data.startsWith("iva_model:") || cq.data.startsWith("iva_think:")) return handleWizardCallback(cq);
   }
   const msg = update.message;
   const text = (msg?.text || "").trim();
+  // A /model wizard waiting for an API key claims this user's next plain-text message
+  // (the key must never reach eve); any command cancels the wait and falls through.
+  if (msg?.from && text) {
+    const pending = getWizard(msg.chat?.id, String(msg.from.id));
+    if (pending?.awaitKey) {
+      if (text.startsWith("/")) pending.awaitKey = false;
+      else return handleKeyMessage(msg, pending);
+    }
+  }
   if (!text.startsWith("/")) return false;
   const cmd = text.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
-  if (!["/help", "/usage", "/restart", "/new", "/clear", "/compact", "/update"].includes(cmd)) return false;
+  if (!["/help", "/usage", "/restart", "/new", "/clear", "/compact", "/update", "/model", "/think"].includes(cmd)) return false;
   const from = String(msg?.from?.id ?? "");
   if (ALLOWED.size === 0 || !ALLOWED.has(from)) return false; // untrusted — let eve drop it
   const chatId = msg?.chat?.id;
@@ -288,6 +564,15 @@ async function handleControl(update) {
   // /update — check upstream; if newer, offer inline Update/Skip buttons. Out-of-band.
   if (cmd === "/update") {
     await handleUpdateCheck(chatId);
+    return true;
+  }
+  // /model, /think — provider/model/effort wizard (writes .env; applied on restart).
+  if (cmd === "/model") {
+    await handleModelCmd(chatId, from);
+    return true;
+  }
+  if (cmd === "/think") {
+    await handleThinkCmd(chatId, from);
     return true;
   }
   // /restart, /new, /clear, /compact → process restart (reliable reset/recovery).
