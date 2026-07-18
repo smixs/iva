@@ -4,17 +4,18 @@
 // interactive readline at import). Edit the arrays below to curate what the wizard offers.
 import { listCodexModels } from "./codex-oauth.mjs";
 
-export const OLLAMA_BASE = "https://ollama.com/v1";
-export const OPENCODE_BASE = "https://opencode.ai/zen/go/v1";
-export const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-
-// Reasoning-effort levels (applied natively on codex only — see agent/provider.ts).
+// Reasoning-effort levels. Shared with agent/provider.ts (THINKING_EFFORT validation),
+// applied natively on codex only.
 export const EFFORTS = ["minimal", "low", "medium", "high"];
+
+// A hung provider endpoint must not stall the bridge's single getUpdates loop.
+const FETCH_TIMEOUT_MS = 10_000;
 
 export const CATALOG = {
   ollama: {
     label: "Ollama Cloud",
     auth: "key",
+    base: "https://ollama.com/v1",
     keyVar: "OLLAMA_API_KEY",
     modelVar: "OLLAMA_MODEL",
     def: "deepseek-v4-pro",
@@ -23,6 +24,7 @@ export const CATALOG = {
   opencode: {
     label: "OpenCode Go",
     auth: "key",
+    base: "https://opencode.ai/zen/go/v1",
     keyVar: "OPENCODE_API_KEY",
     modelVar: "OPENCODE_MODEL",
     def: "deepseek-v4-pro",
@@ -40,6 +42,7 @@ export const CATALOG = {
   openrouter: {
     label: "OpenRouter",
     auth: "key",
+    base: "https://openrouter.ai/api/v1",
     keyVar: "OPENROUTER_API_KEY",
     modelVar: "OPENROUTER_MODEL",
     def: "openai/gpt-5.1",
@@ -57,8 +60,9 @@ export const CATALOG = {
   },
 };
 
-// Live model list with static fallback. 401/403 → {auth:true} error (bad key);
-// any other failure (network, format drift) → the static list above.
+// Live model list with static fallback. 401/403 → {auth:true} error (stored key is
+// dead — the wizard re-enters the key flow); any other failure (network, format
+// drift) → the static list above.
 export async function fetchModels(provider, key, { dataDir } = {}) {
   const cat = CATALOG[provider];
   try {
@@ -66,9 +70,11 @@ export async function fetchModels(provider, key, { dataDir } = {}) {
       const live = await listCodexModels(dataDir ? { dataDir } : {});
       return live.length ? live : cat.models;
     }
-    if (provider === "ollama" || provider === "opencode") {
-      const base = provider === "ollama" ? OLLAMA_BASE : OPENCODE_BASE;
-      const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${key}` } });
+    if (cat.base && provider !== "openrouter") {
+      const res = await fetch(`${cat.base}/models`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       if (res.status === 401 || res.status === 403) throw Object.assign(new Error("key rejected"), { auth: true });
       if (!res.ok) return cat.models;
       const ids = ((await res.json()).data || []).map((m) => m.id).sort();
@@ -84,14 +90,15 @@ export async function fetchModels(provider, key, { dataDir } = {}) {
 // Cheap key validity probe (same lenient policy as setup.mjs: network flake ⇒ accept).
 // Returns null when the key looks fine, or a short human-readable reason.
 export async function checkKey(provider, key) {
-  const url =
-    provider === "ollama" ? `${OLLAMA_BASE}/models`
-    : provider === "opencode" ? `${OPENCODE_BASE}/models`
-    : provider === "openrouter" ? `${OPENROUTER_BASE}/key`
-    : null;
-  if (!url) return null;
+  const cat = CATALOG[provider];
+  if (!cat?.base) return null;
+  // OpenRouter has a dedicated auth-only endpoint; the others validate via /models.
+  const url = provider === "openrouter" ? `${cat.base}/key` : `${cat.base}/models`;
   try {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (res.status === 401 || res.status === 403) return `провайдер отверг ключ (${res.status})`;
     return null;
   } catch {
