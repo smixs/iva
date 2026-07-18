@@ -3,12 +3,13 @@
 // this edits lines in place: comments, blank lines, unknown keys and order survive.
 import { readFile, writeFile, rename, stat, chmod } from "node:fs/promises";
 
-const LINE_RE = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/;
+// Lazy value capture + trailing \s*: tolerates CRLF files (a greedy .* would keep the \r).
+const LINE_RE = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/;
 
 /** Parse .env text → {KEY: value}; surrounding quotes stripped (same regex as setup.mjs). */
 export function parseEnvText(text) {
   const env = {};
-  for (const line of String(text).split("\n")) {
+  for (const line of String(text).split(/\r?\n/)) {
     const m = line.match(LINE_RE);
     if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
