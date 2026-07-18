@@ -126,6 +126,7 @@
     "organization": "contact",
     "thought": "note",
     "reflection": "note",
+    "emotional_state": "note",
     "learning": "note",
     "memo": "note",
     "daily": "daily-summary",

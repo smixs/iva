@@ -85,6 +85,10 @@ function buildPrompt(p: Period, now: string): string {
         `Never leave two contradictory CURRENT values; History is append-only, never edited. ` +
         `Tag each fact's certainty with 'confidence:' — EXTRACTED (user stated it directly) or ` +
         `INFERRED (you deduced it). ` +
+        `Emotional venting and momentary states ("I'm useless", "wasted the whole day", tiredness, ` +
+        `frustration) are NEVER identity-level facts: never put them into CORE or entity cards. ` +
+        `At most mention them as a dated mood line in the daily-summary, or — only if clearly worth ` +
+        `keeping — a note card with status: archived. ` +
         `First read ${VAULT}/.graph/supersede-candidates.json (the deterministic conflict scan) and ` +
         `resolve every listed same-entity conflict by superseding the stale card. ` +
         `Then assemble a daily-summary for ${yesterday} with the day's topics and MOC links down to the cards ` +
