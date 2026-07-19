@@ -134,6 +134,7 @@ test("notification target prefers digest chat and falls back to the first truste
 test("installer persists the selected update channel and integrates the fetched oid", () => {
   const installer = readFileSync(new URL("../../install.sh", import.meta.url), "utf8");
   assert.match(installer, /config --local iva\.updateBranch "\$UPDATE_CHANNEL"/);
+  assert.match(installer, /UPDATE_CHANNEL="\$\(git -C "\$PROJECT_DIR" branch --show-current/);
   assert.match(installer, /remote_ref="\$\(git -C "\$PROJECT_DIR" rev-parse FETCH_HEAD\)"/);
   assert.doesNotMatch(installer, /remote_ref="origin\/\$BRANCH"/);
 });

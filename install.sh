@@ -22,8 +22,6 @@ printf '\n  \033[36m⏳ Preparing environment / Идёт подготовка о
 set -Eeuo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/smixs/iva.git}"
-BRANCH_EXPLICIT=false
-if [ -n "${BRANCH+x}" ]; then BRANCH_EXPLICIT=true; fi
 BRANCH="${BRANCH:-main}"
 UPDATE_CHANNEL="$BRANCH"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/iva}"
@@ -448,10 +446,8 @@ if [ -n "$SOURCE" ] && [ -f "$SOURCE" ]; then
 fi
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/package.json" ] && grep -q '"eve"' "$SCRIPT_DIR/package.json"; then
   PROJECT_DIR="$SCRIPT_DIR"
-  if [ "$BRANCH_EXPLICIT" = false ]; then
-    UPDATE_CHANNEL="$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null || true)"
-    UPDATE_CHANNEL="${UPDATE_CHANNEL:-main}"
-  fi
+  UPDATE_CHANNEL="$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null || true)"
+  UPDATE_CHANNEL="${UPDATE_CHANNEL:-main}"
   step "$(t "Using current directory: $PROJECT_DIR" "Использую текущий каталог: $PROJECT_DIR")"
 elif [ -d "$INSTALL_DIR/.git" ]; then
   PROJECT_DIR="$INSTALL_DIR"
