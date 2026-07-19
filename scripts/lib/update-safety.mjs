@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { persistUpdateBranch, resolveUpdateTarget } from "./update-channel.mjs";
 
 const LOCK_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -110,6 +111,7 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
   const commandEnv = { ...env };
   let originalHead = "";
   let branch = "";
+  let updateBranch = "";
   let backupRef = "";
   let stashOid = "";
   let hadLocalChanges = false;
@@ -155,20 +157,20 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
   }
 
   async function fetchAndIntegrate() {
-    const fetchResult = await git("fetch", "--prune", "origin", branch);
-    if (fetchResult.code !== 0) throw new Error(fetchResult.stderr || "git fetch failed");
-    const remote = await mustGit("rev-parse", `origin/${branch}`);
-    if (remote === originalHead) return { changed: false, remote };
+    const target = await resolveUpdateTarget({ git });
+    updateBranch = target.branch;
+    const remote = target.targetHead;
+    if (remote === originalHead) return { changed: false, remote, ...target };
 
     const ff = await git("merge-base", "--is-ancestor", originalHead, remote);
     if (ff.code === 0) {
       await mustGit("merge", "--ff-only", remote);
       changed = true;
-      return { changed, remote };
+      return { changed, remote, ...target };
     }
 
     const remoteBehind = await git("merge-base", "--is-ancestor", remote, originalHead);
-    if (remoteBehind.code === 0) return { changed: false, remote };
+    if (remoteBehind.code === 0) return { changed: false, remote, ...target };
 
     const rebase = await git("rebase", remote);
     if (rebase.code !== 0) {
@@ -176,7 +178,7 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
       throw new Error("local commits conflict with the update");
     }
     changed = true;
-    return { changed, remote };
+    return { changed, remote, ...target };
   }
 
   async function restoreLocalChanges() {
@@ -235,6 +237,7 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
       outputBackup = "";
     }
     await dropExactStash();
+    if (updateBranch) await persistUpdateBranch(git, updateBranch);
     if (backupRef) await git("update-ref", "-d", backupRef);
     if (envBackup) rmSync(envBackup, { force: true });
   }
