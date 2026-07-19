@@ -1,7 +1,14 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { modelSummary } from "./model-summary.mjs";
-import { SPINNER_FRAMES } from "./progress.mjs";
+
+// Small teal loader from https://t.me/addemoji/LoadingStatusByTimDesign.
+// Bots whose owner doesn't have Telegram Premium transparently fall back to ◇.
+export const UPDATE_LOADER = {
+  alt: "🟩",
+  customEmojiId: "5256127530271786963",
+  fallback: "◇",
+};
 
 const COPY = {
   en: {
@@ -22,17 +29,16 @@ const COPY = {
   },
 };
 
-export function createTelegramUpdateReporter({ token, job, env, fetchImpl = fetch, intervalMs = 1500, sleepImpl } = {}) {
+export function createTelegramUpdateReporter({ token, job, env, fetchImpl = fetch, sleepImpl } = {}) {
   if (!token || !job?.chatId || !job?.messageId) return null;
   const lang = job.locale === "ru" ? "ru" : "en";
   const copy = COPY[lang];
   const api = `https://api.telegram.org/bot${token}`;
   let currentMessageId = job.messageId;
   let currentPhase = null;
-  let timer = null;
-  let frame = 0;
-  let lastText = "";
+  let lastPayload = "";
   let uiLost = false;
+  let customEmojiSupported = true;
   const wait = sleepImpl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
   async function call(method, body) {
@@ -52,78 +58,83 @@ export function createTelegramUpdateReporter({ token, job, env, fetchImpl = fetc
       const data = await res.json().catch(() => ({ ok: false, description: `HTTP ${res.status}` }));
       if (res.ok && data.ok) return data.result;
       const transient = res.status === 429 || res.status >= 500;
-      if (!transient || attempt === 3) throw new Error(data.description || `Telegram ${res.status}`);
+      if (!transient || attempt === 3) {
+        const error = new Error(data.description || `Telegram ${res.status}`);
+        error.status = res.status;
+        throw error;
+      }
       const retryMs = Math.min(5000, Math.max(250, Number(data.parameters?.retry_after || 1) * 1000));
       await wait(retryMs);
     }
     throw new Error("Telegram request failed");
   }
 
-  async function edit(text) {
-    if (!currentMessageId || text === lastText) return;
-    lastText = text;
+  async function edit(body) {
+    if (!currentMessageId) return { ok: false };
+    const payload = JSON.stringify(body);
+    if (payload === lastPayload) return { ok: true };
     try {
-      await call("editMessageText", { chat_id: job.chatId, message_id: currentMessageId, text });
+      await call("editMessageText", { chat_id: job.chatId, message_id: currentMessageId, ...body });
+      lastPayload = payload;
+      return { ok: true };
     } catch (error) {
-      if (/message is not modified/i.test(error.message)) return;
+      if (/message is not modified/i.test(error.message)) {
+        lastPayload = payload;
+        return { ok: true };
+      }
       if (/message to edit not found|message can't be edited/i.test(error.message)) {
         currentMessageId = null;
         uiLost = true;
       }
+      return { ok: false, error };
     }
   }
 
-  async function animate() {
-    if (!currentPhase || !currentMessageId || animate.running) return;
-    animate.running = true;
+  async function editActive(text) {
+    if (customEmojiSupported) {
+      const rich = {
+        text: `${UPDATE_LOADER.alt} ${text}`,
+        entities: [{
+          type: "custom_emoji",
+          offset: 0,
+          length: UPDATE_LOADER.alt.length,
+          custom_emoji_id: UPDATE_LOADER.customEmojiId,
+        }],
+      };
+      const result = await edit(rich);
+      if (result.ok) return;
+      if (!currentMessageId) return;
+      if (result.error?.status !== 400) return;
+      customEmojiSupported = false;
+    }
+    await edit({ text: `${UPDATE_LOADER.fallback} ${text}` });
+  }
+
+  async function finish(text) {
+    if ((await edit({ text })).ok) return;
+    if (!uiLost) return;
     try {
-      await edit(`${SPINNER_FRAMES[frame++ % SPINNER_FRAMES.length]} ${copy[currentPhase][0]}`);
-    } finally {
-      animate.running = false;
-    }
-  }
-  animate.running = false;
-
-  function stop() {
-    if (timer) clearInterval(timer);
-    timer = null;
+      await call("sendMessage", { chat_id: job.chatId, text });
+    } catch {}
   }
 
   return {
     async start(phase) {
-      stop();
       currentPhase = phase;
-      frame = 0;
-      lastText = "";
-      if (phase !== "protect" && !uiLost) {
-        try {
-          const msg = await call("sendMessage", { chat_id: job.chatId, text: `${SPINNER_FRAMES[0]} ${copy[phase][0]}` });
-          currentMessageId = msg.message_id;
-          frame = 1;
-        } catch {
-          currentMessageId = null;
-          uiLost = true;
-        }
-      } else if (!uiLost) {
-        await animate();
-      }
-      timer = setInterval(() => void animate(), intervalMs);
+      if (!uiLost) await editActive(copy[phase][0]);
     },
     async done(phase) {
-      stop();
-      if (currentPhase === phase) await edit(`✓ ${copy[phase][1]}`);
+      // The next phase replaces this one in the same message. A transient
+      // "done" edit would only add API traffic and flicker without preserving history.
+      if (currentPhase !== phase) return;
       currentPhase = null;
     },
     async fail(phase, beforeVersion) {
-      stop();
-      if (currentPhase === phase) await edit(`⚠️ ${copy[phase][2]}`);
+      const reason = copy[phase][2];
       currentPhase = null;
-      try {
-        await call("sendMessage", { chat_id: job.chatId, text: copy.failure(beforeVersion) });
-      } catch {}
+      await finish(`⚠️ ${reason}\n\n${copy.failure(beforeVersion)}`);
     },
     async complete({ beforeVersion, afterVersion }) {
-      stop();
       const model = modelSummary(env);
       const lines = [
         copy.final,
@@ -132,13 +143,9 @@ export function createTelegramUpdateReporter({ token, job, env, fetchImpl = fetc
         `${lang === "ru" ? "Модель" : "Model"}: ${model.line}`,
       ];
       lines.push(copy.preserved);
-      try {
-        await call("sendMessage", { chat_id: job.chatId, text: lines.join("\n") });
-      } catch {}
+      await finish(lines.join("\n"));
     },
-    dispose() {
-      stop();
-    },
+    dispose() {},
   };
 }
 

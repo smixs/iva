@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelSummary } from "./model-summary.mjs";
 import { createTerminalProgress } from "./progress.mjs";
-import { createTelegramUpdateReporter } from "./telegram-status.mjs";
+import { createTelegramUpdateReporter, UPDATE_LOADER } from "./telegram-status.mjs";
 import { acquireUpdateLock, createUpdateTransaction, releaseUpdateLock } from "./update-safety.mjs";
 
 test("modelSummary uses configured provider values without runtime defaults", () => {
@@ -38,9 +38,8 @@ test("terminal progress restores the cursor when disposed", () => {
   assert.match(output, /\x1b\[\?25h/);
 });
 
-test("Telegram update uses the existing message plus three new messages", async () => {
+test("Telegram update edits one message through every phase and final result", async () => {
   const calls = [];
-  let nextMessageId = 101;
   const fetchImpl = async (url, init) => {
     const method = url.split("/").at(-1);
     const body = JSON.parse(init.body);
@@ -48,7 +47,7 @@ test("Telegram update uses the existing message plus three new messages", async 
     return {
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, result: method === "sendMessage" ? { message_id: nextMessageId++ } : {} }),
+      json: async () => ({ ok: true, result: {} }),
     };
   };
   const reporter = createTelegramUpdateReporter({
@@ -56,7 +55,6 @@ test("Telegram update uses the existing message plus three new messages", async 
     job: { chatId: 1, messageId: 100, locale: "ru" },
     env: { MODEL_PROVIDER: "codex", CODEX_MODEL: "gpt-5.5" },
     fetchImpl,
-    intervalMs: 60_000,
   });
   await reporter.start("protect");
   await reporter.done("protect");
@@ -67,13 +65,23 @@ test("Telegram update uses the existing message plus three new messages", async 
   await reporter.complete({ beforeVersion: "v1", afterVersion: "v2", changedLocal: true });
   reporter.dispose();
 
-  const sends = calls.filter((call) => call.method === "sendMessage");
-  assert.equal(sends.length, 3, "fetch, build and final are the only new messages");
-  assert.match(sends[2].body.text, /Iva обновлена/);
-  assert.match(sends[2].body.text, /OpenAI · gpt-5.5/);
+  assert.equal(calls.filter((call) => call.method === "sendMessage").length, 0);
   const edits = calls.filter((call) => call.method === "editMessageText");
-  assert.equal(edits[0].body.message_id, 100);
-  assert.equal(edits.at(-1).body.text, "✓ Iva собрана");
+  assert.equal(edits.length, 4);
+  assert.deepEqual(edits.map((call) => call.body.message_id), [100, 100, 100, 100]);
+  assert.deepEqual(edits.slice(0, 3).map((call) => call.body.entities[0].custom_emoji_id), [
+    UPDATE_LOADER.customEmojiId,
+    UPDATE_LOADER.customEmojiId,
+    UPDATE_LOADER.customEmojiId,
+  ]);
+  assert.deepEqual(edits.slice(0, 3).map((call) => call.body.text), [
+    `${UPDATE_LOADER.alt} Сохраняю ваши изменения`,
+    `${UPDATE_LOADER.alt} Получаю обновление`,
+    `${UPDATE_LOADER.alt} Собираю Iva`,
+  ]);
+  assert.match(edits[3].body.text, /Iva обновлена/);
+  assert.match(edits[3].body.text, /OpenAI · gpt-5.5/);
+  assert.equal(edits[3].body.entities, undefined);
 });
 
 test("Telegram does not recreate phase messages after the active message was deleted", async () => {
@@ -91,7 +99,6 @@ test("Telegram does not recreate phase messages after the active message was del
     job: { chatId: 1, messageId: 100, locale: "en" },
     env: { MODEL_PROVIDER: "codex", CODEX_MODEL: "gpt-5.5" },
     fetchImpl,
-    intervalMs: 60_000,
   });
   await reporter.start("protect");
   await reporter.start("fetch");
@@ -101,7 +108,7 @@ test("Telegram does not recreate phase messages after the active message was del
   assert.equal(calls.filter((call) => call.method === "sendMessage").length, 1, "only the final result is recreated");
 });
 
-test("Telegram retries 429 and deduplicates completed edits", async () => {
+test("Telegram retries 429 without downgrading the custom emoji and deduplicates phase edits", async () => {
   const calls = [];
   let first = true;
   const fetchImpl = async (url, init) => {
@@ -118,13 +125,68 @@ test("Telegram retries 429 and deduplicates completed edits", async () => {
     env: {},
     fetchImpl,
     sleepImpl: async () => {},
-    intervalMs: 60_000,
   });
+  await reporter.start("protect");
   await reporter.start("protect");
   await reporter.done("protect");
   await reporter.done("protect");
   reporter.dispose();
-  assert.equal(calls.length, 3, "one retry plus one final edit");
+  assert.equal(calls.length, 2, "one retry and no duplicate edit");
+  assert.ok(calls.every((call) => call.body.entities?.[0].custom_emoji_id === UPDATE_LOADER.customEmojiId));
+});
+
+test("Telegram falls back to a simple Unicode marker when custom emoji is unavailable", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push({ method: url.split("/").at(-1), body });
+    if (body.entities) {
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, description: "Bad Request: custom emoji entities are not allowed" }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({ ok: true, result: {} }) };
+  };
+  const reporter = createTelegramUpdateReporter({
+    token: "token",
+    job: { chatId: 1, messageId: 100, locale: "en" },
+    env: {},
+    fetchImpl,
+  });
+  await reporter.start("protect");
+  await reporter.start("fetch");
+  reporter.dispose();
+
+  assert.equal(calls.length, 3);
+  assert.ok(calls[0].body.entities);
+  assert.equal(calls[1].body.text, `${UPDATE_LOADER.fallback} Saving your changes`);
+  assert.equal(calls[2].body.text, `${UPDATE_LOADER.fallback} Getting the update`);
+  assert.equal(calls[1].body.entities, undefined);
+  assert.equal(calls[2].body.entities, undefined);
+});
+
+test("Telegram update failure replaces the active phase in the same message", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ method: url.split("/").at(-1), body: JSON.parse(init.body) });
+    return { ok: true, status: 200, json: async () => ({ ok: true, result: {} }) };
+  };
+  const reporter = createTelegramUpdateReporter({
+    token: "token",
+    job: { chatId: 1, messageId: 100, locale: "en" },
+    env: {},
+    fetchImpl,
+  });
+  await reporter.start("fetch");
+  await reporter.fail("fetch", "v1");
+  reporter.dispose();
+
+  assert.equal(calls.filter((call) => call.method === "sendMessage").length, 0);
+  assert.deepEqual(calls.map((call) => call.body.message_id), [100, 100]);
+  assert.match(calls[1].body.text, /Couldn't get the update/);
+  assert.match(calls[1].body.text, /still running v1/);
 });
 
 test("update callback is acknowledged before any message edit", async () => {
