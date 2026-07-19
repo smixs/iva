@@ -41,6 +41,7 @@ Note: `getUpdates` — which the setup wizard uses to discover your user ID — 
 | `iva-memory-monthly.timer` | 1st, 04:20 | weeklies → monthly summary (silent) |
 | `iva-memory-yearly.timer` | Jan 1, 04:25 | monthlies → yearly summary (silent) |
 | `iva-memory-doctor.timer` | 05:00 nightly | schema/health/decay/MOC checks + vault `git push` |
+| `iva-update-check.timer` | 10:00 daily | check for a newer stable Iva version; notify once per version |
 
 Timers fire in the server's **local time** and carry `Persistent=true`, so a run missed during downtime fires after reboot. Set the server clock to match your `.env`:
 
@@ -56,6 +57,8 @@ npm run doctor
 systemctl --user list-timers
 iva logs                  # agent; `iva logs poll` for the bridge
 ```
+
+The update check fetches the configured Git upstream without calling the model. It stays silent when the installed stable version is current, when the same version was already offered, or when Telegram is not configured. A newer `MAJOR.MINOR.PATCH` release produces one message in `TELEGRAM_DIGEST_CHAT_ID` (falling back to the first trusted user) with **Update** and **Later** buttons. Errors are journal-only and retry on the next timer run.
 
 Full CLI reference: [cli](./cli.md). What the rollups actually write: [memory](./memory.md).
 
