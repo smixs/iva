@@ -55,6 +55,8 @@ The installer puts `iva` in `~/.local/bin`. Commands that touch systemd need a L
 | `iva version` | Package version + git commit |
 | `iva tree` | The willow, animated |
 
+The installer records the selected update branch in the checkout's local Git config. Stable installs follow `main`; an explicitly installed `BRANCH=…` keeps following that channel. Legacy installs without this setting automatically move from an old feature branch to `main` only when Git proves that the feature HEAD is already contained in `main`, so local work is never overwritten to guess an update channel.
+
 ```bash
 iva usage week      # 7-day totals, by source and model
 iva usage tail 20   # last 20 raw log lines
