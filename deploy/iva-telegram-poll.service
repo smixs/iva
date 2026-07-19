@@ -13,6 +13,9 @@ WorkingDirectory=__PROJECT_DIR__
 EnvironmentFile=__PROJECT_DIR__/.env
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=__NODE_BIN__ --env-file=.env scripts/telegram-poll.mjs
+# Bootstrap units introduced by an update: the updater that fetched this file may still
+# be running the previous CLI code and therefore cannot know about the new timer yet.
+ExecStartPost=-/usr/bin/systemctl --user enable --now iva-update-check.timer
 Restart=always
 RestartSec=3
 

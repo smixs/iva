@@ -605,6 +605,8 @@ elif prompt_yes_no "$(t "Set up autostart via systemd (service + memory timers)?
       tname="$(basename "$t")"
       systemctl --user enable --now "$tname" || warn "$(t "couldn't enable $tname" "не удалось включить $tname")"
     done
+    systemctl --user enable --now iva-update-check.timer \
+      || warn "$(t "couldn't enable iva-update-check.timer" "не удалось включить iva-update-check.timer")"
     ok "$(t "Memory timers enabled: systemctl --user list-timers" "Таймеры памяти включены: systemctl --user list-timers")"
   fi
   loginctl enable-linger "$USER" >/dev/null 2>&1 || warn "$(t "couldn't enable linger (the service won't start before login)" "не удалось включить linger (сервис не стартует до логина)")"

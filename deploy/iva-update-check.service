@@ -1,0 +1,11 @@
+[Unit]
+Description=Iva daily update check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=__PROJECT_DIR__/.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=__NODE_BIN__ --env-file=.env scripts/check-update.mjs
