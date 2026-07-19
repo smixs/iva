@@ -1,0 +1,9 @@
+[Unit]
+Description=Iva daily update check — 10:00 local
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 __TIMEZONE__
+Persistent=true
+
+[Install]
+WantedBy=timers.target

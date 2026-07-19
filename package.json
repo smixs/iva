@@ -22,7 +22,7 @@
     "memory": "node --env-file=.env scripts/memory/rollup.ts",
     "doctor": "node --env-file=.env scripts/memory/doctor.ts",
     "typecheck": "tsgo",
-    "test:update-ui": "node --test scripts/lib/update-ui.test.mjs",
+    "test:update-ui": "node --test scripts/lib/update-ui.test.mjs scripts/lib/update-check.test.mjs",
     "postinstall": "patch-package"
   },
   "dependencies": {

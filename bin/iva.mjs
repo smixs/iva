@@ -31,7 +31,9 @@ const NPM = existsSync(join(NODE_BIN_DIR, "npm")) ? join(NODE_BIN_DIR, "npm") : 
 const childEnv = { ...process.env, PATH: `${NODE_BIN_DIR}:${process.env.PATH || ""}` };
 
 const SERVICES = ["iva.service", "iva-telegram-poll.service"];
-const TIMERS = ["daily", "weekly", "monthly", "yearly", "doctor"].map((n) => `iva-memory-${n}.timer`);
+const MEMORY_TIMERS = ["daily", "weekly", "monthly", "yearly", "doctor"].map((n) => `iva-memory-${n}.timer`);
+const UPDATE_TIMER = "iva-update-check.timer";
+const TIMERS = [...MEMORY_TIMERS, UPDATE_TIMER];
 
 // Telegram userbot proxy — OPT-IN (not in SERVICES, so `iva update` never tries to start
 // it without API creds). Enabled explicitly via `iva userbot setup`.
@@ -136,12 +138,15 @@ function writeUnits() {
   writeFileSync(join(UNIT_DIR, "iva.service"), ivaServiceBody());
   const written = ["iva.service"];
   const deploy = join(ROOT, "deploy");
+  const configuredTimezone = (readEnv().ASSISTANT_TIMEZONE || "UTC").trim();
+  const timezone = /^[A-Za-z0-9_+\/-]+$/.test(configuredTimezone) ? configuredTimezone : "UTC";
   for (const f of readdirSync(deploy)) {
     if (!/^iva-.*\.(service|timer)$/.test(f)) continue;
     const tpl = readFileSync(join(deploy, f), "utf8")
       .replaceAll("__PROJECT_DIR__", ROOT)
       .replaceAll("__NODE_BIN__", NODE)
-      .replaceAll("__PYTHON_BIN__", VENV_PY);
+      .replaceAll("__PYTHON_BIN__", VENV_PY)
+      .replaceAll("__TIMEZONE__", timezone);
     writeFileSync(join(UNIT_DIR, f), tpl);
     written.push(f);
   }
@@ -349,6 +354,12 @@ async function cmdUpdate(args) {
     terminal.done(text[name][1]);
     await reporter?.done(name);
   };
+  const ensureUpdateTimer = async () => {
+    if (!hasSystemd()) return;
+    writeUnits();
+    const timer = await tx.run("systemctl", ["--user", "enable", "--now", UPDATE_TIMER]);
+    if (timer.code !== 0) terminal.info(`⚠️ ${UPDATE_TIMER} was not enabled; run: iva doctor`);
+  };
 
   try {
     await phaseStart("protect");
@@ -363,6 +374,7 @@ async function cmdUpdate(args) {
 
     if (!update.changed && !force) {
       await tx.commit();
+      await ensureUpdateTimer();
       terminal.info(`✅ ${text.current} (${versions.afterVersion})`);
       await reporter?.complete({ ...versions, changedLocal: tx.hadLocalChanges });
       return;
@@ -405,6 +417,7 @@ async function cmdUpdate(args) {
 
     await phaseDone("build");
     await tx.commit();
+    await ensureUpdateTimer();
     const model = modelSummary(readEnv());
     terminal.info(`✅ Iva ${locale === "ru" ? "обновлена" : "updated"}`);
     terminal.info(`${versions.beforeVersion} → ${versions.afterVersion} · ${model.provider}/${model.model}`);
@@ -521,7 +534,7 @@ function cmdDoctor() {
       else (bad(`${svc} won't start — journalctl --user -u ${svc} -e`), badN++);
     }
   }
-  // Memory timers enabled
+  // Background timers enabled
   for (const t of TIMERS) {
     if (scQ("is-enabled", t).out === "enabled") okN++;
     else {
@@ -530,7 +543,7 @@ function cmdDoctor() {
       fixN++;
     }
   }
-  ok(`Memory timers checked (${TIMERS.length})`);
+  ok(`Background timers checked (${TIMERS.length}: ${MEMORY_TIMERS.length} memory + update check)`);
 
   // 6. Vault + git origin (report only — we don't initiate git operations)
   const vaultRel = env.ASSISTANT_VAULT_DIR || "vault";
@@ -557,7 +570,7 @@ function cmdDoctor() {
 function cmdStatus() {
   requireSystemd();
   run("systemctl", ["--user", "status", "--no-pager", "-n", "5", ...SERVICES]);
-  run("systemctl", ["--user", "list-timers", "--no-pager", "iva-memory-*"]);
+  run("systemctl", ["--user", "list-timers", "--no-pager", "iva-memory-*", UPDATE_TIMER]);
 }
 function cmdRestart() {
   requireSystemd();

@@ -20,6 +20,7 @@ import { CATALOG, EFFORTS, fetchModels, checkKey } from "./lib/model-catalog.mjs
 import { getAccessToken, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 import { compactNumber, modelSummary } from "./lib/model-summary.mjs";
 import { acquireUpdateLock, releaseUpdateLock } from "./lib/update-safety.mjs";
+import { inspectUpstream, markVersionNotified, updateOffer } from "./lib/update-check.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOW_DIR = join(ROOT, ".workflow-data");
@@ -196,35 +197,6 @@ async function restartAgent() {
 }
 
 // ── self-update (/update) ──────────────────────────────────────────────────
-// git in ROOT; resolves to trimmed stdout ("" on error) so callers can compare safely.
-function git(...args) {
-  return new Promise((resolve, reject) =>
-    execFile("git", ["-C", ROOT, ...args], { maxBuffer: 1 << 20 }, (error, out, err) =>
-      error ? reject(new Error((err || error.message).trim())) : resolve((out || "").trim()),
-    ),
-  );
-}
-const pkgVersion = (jsonText) => {
-  try {
-    return JSON.parse(jsonText).version || null;
-  } catch {
-    return null;
-  }
-};
-
-// Compare local HEAD against the upstream branch. Fetches first (network). `hasUpdate`
-// is true only when upstream is strictly ahead — local-ahead / equal ⇒ nothing to do.
-async function checkUpstream() {
-  const branch = (await git("rev-parse", "--abbrev-ref", "HEAD")) || "main";
-  await git("fetch", "--prune", "origin", branch);
-  const local = await git("rev-parse", "HEAD");
-  const remote = await git("rev-parse", `origin/${branch}`);
-  const behind = Number(await git("rev-list", "--count", `HEAD..origin/${branch}`)) || 0;
-  const localVer = pkgVersion(await git("show", "HEAD:package.json"));
-  const remoteVer = pkgVersion(await git("show", `origin/${branch}:package.json`));
-  return { branch, local, remote, behind, localVer, remoteVer, hasUpdate: behind > 0 && local !== remote };
-}
-
 // Run `iva update` in its OWN transient systemd scope, so it survives the restart of
 // THIS bridge (restartServices restarts iva-telegram-poll too — a plain child would be
 // killed with us). --collect GC's the unit after exit. The updater reads a 0600 job
@@ -241,37 +213,38 @@ function launchSelfUpdate(jobId) {
   );
 }
 
-async function handleUpdateCheck(chatId) {
+export async function handleUpdateCheck(
+  chatId,
+  { inspectImpl = inspectUpstream, markNotifiedImpl = markVersionNotified } = {},
+) {
   const status = await reply(chatId, t("◇ Checking for updates", "◇ Проверяю обновления"));
   if (!status) return;
   let info;
   try {
-    info = await checkUpstream();
+    info = await inspectImpl({ root: ROOT });
   } catch (e) {
     await edit(chatId, status.message_id, t("⚠️ Couldn't check for updates", "⚠️ Не удалось проверить обновления"));
     return;
   }
-  if (!info.hasUpdate) {
+  if (!info.hasCommitUpdate) {
     const model = modelSummary(process.env);
     await edit(chatId, status.message_id, t(
-      `✅ You're up to date\n\nIva v${info.localVer ?? "?"}\nModel: ${model.line}`,
-      `✅ У вас актуальная версия\n\nIva v${info.localVer ?? "?"}\nМодель: ${model.line}`,
+      `✅ You're up to date\n\nIva v${info.localVersion ?? "?"}\nModel: ${model.line}`,
+      `✅ У вас актуальная версия\n\nIva v${info.localVersion ?? "?"}\nМодель: ${model.line}`,
     ));
     return;
   }
   const bump =
-    info.remoteVer && info.remoteVer !== info.localVer
-      ? `v${info.localVer ?? "?"} → v${info.remoteVer}`
-      : t(`v${info.localVer ?? "?"} → newer build`, `v${info.localVer ?? "?"} → новая сборка`);
-  await edit(chatId, status.message_id, t(
+    info.remoteVersion && info.remoteVersion !== info.localVersion
+      ? `v${info.localVersion ?? "?"} → v${info.remoteVersion}`
+      : t(`v${info.localVersion ?? "?"} → newer build`, `v${info.localVersion ?? "?"} → новая сборка`);
+  const offered = await edit(chatId, status.message_id, t(
     `⬆️ Update available\n\n${bump}\nSettings and local changes will be preserved.`,
     `⬆️ Доступно обновление\n\n${bump}\nНастройки и локальные изменения будут сохранены.`,
-  ), {
-      inline_keyboard: [[
-        { text: t("⬆️ Update", "⬆️ Обновить"), callback_data: "iva_update:do" },
-        { text: t("Later", "Позже"), callback_data: "iva_update:skip" },
-      ]],
-  });
+  ), updateOffer(info.localVersion, info.remoteVersion, LANG).replyMarkup);
+  if (offered && info.hasVersionUpdate) {
+    await markNotifiedImpl(DATA_DIR, info.remoteVersion).catch((error) => log("update notification state failed:", error.message));
+  }
 }
 
 async function removeStaleUpdateJobs() {

@@ -163,6 +163,46 @@ test("update callback is acknowledged before any message edit", async () => {
   }
 });
 
+test("manual update offer keeps commit-based behavior and marks a stable release as shown", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousToken = process.env.TELEGRAM_BOT_TOKEN;
+  const previousAllowed = process.env.TELEGRAM_ALLOWED_USER_IDS;
+  process.env.TELEGRAM_BOT_TOKEN = "token";
+  process.env.TELEGRAM_ALLOWED_USER_IDS = "42";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    const method = url.split("/").at(-1);
+    const body = JSON.parse(init.body);
+    calls.push({ method, body });
+    return {
+      ok: true,
+      json: async () => ({ ok: true, result: method === "sendMessage" ? { message_id: 10 } : { message_id: 10 } }),
+    };
+  };
+  try {
+    const bridge = await import(`../telegram-poll.mjs?manual=${Date.now()}`);
+    const marked = [];
+    await bridge.handleUpdateCheck(1, {
+      inspectImpl: async () => ({
+        hasCommitUpdate: true,
+        hasVersionUpdate: true,
+        localVersion: "1.2.3",
+        remoteVersion: "1.2.4",
+      }),
+      markNotifiedImpl: async (_dataDir, version) => marked.push(version),
+    });
+    assert.deepEqual(calls.map((call) => call.method), ["sendMessage", "editMessageText"]);
+    assert.equal(calls[1].body.reply_markup.inline_keyboard[0].length, 2);
+    assert.deepEqual(marked, ["1.2.4"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = previousToken;
+    if (previousAllowed === undefined) delete process.env.TELEGRAM_ALLOWED_USER_IDS;
+    else process.env.TELEGRAM_ALLOWED_USER_IDS = previousAllowed;
+  }
+});
+
 test("update lock is exclusive and owner-reentrant", () => {
   const dir = mkdtempSync(join(tmpdir(), "iva-lock-"));
   const first = acquireUpdateLock(dir, "one");

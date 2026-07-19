@@ -20,6 +20,8 @@ Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it
 
 `/update` compares your install with the upstream repo. If a newer version exists, the same message gets **⬆️ Update** and **Later** buttons. After confirmation, four compact messages show preservation, fetch, build and the final result. The active message animates by editing in place; build logs, diffs and commit IDs stay on the server. The detached updater survives the bridge restart. Nothing happens until you tap.
 
+Independently, `iva-update-check.timer` checks upstream every day at 10:00 local time. It calls no model and says nothing unless a higher stable version exists. Each version is offered once in the digest chat with the same buttons; **Later** closes that offer, while manual `/update` always remains available.
+
 ### /usage variants
 
 | Variant | Window |
