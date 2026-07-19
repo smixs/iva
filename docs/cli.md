@@ -12,13 +12,13 @@ Iva has two control surfaces: slash commands in Telegram and the `iva` command o
 | `/digest` | Morning digest built by the morning-digest skill |
 | `/new` | Start over — reset the current conversation |
 | `/restart` | Restart the agent when it's stuck |
-| `/clear` `/compact` | Same reset as `/new` |
+| `/clear` | Same reset as `/new` (`/compact` remains as a legacy alias) |
 | `/update` | Check for a new version; if there is one, tap **Update** to install it |
 | `/usage [window]` | Token spend — variants below |
 
-Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it running. `/help`, `/usage`, `/restart`, `/new`, `/clear`, `/compact` and `/update` never reach the agent — the long-poll bridge handles them itself, out-of-band. It stops `iva.service`, wipes `.workflow-data` (where eve re-enqueues stuck runs on every startup), and starts fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
+Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it running. `/help`, `/usage`, `/restart`, `/new`, `/clear`, the legacy `/compact` alias and `/update` never reach the agent — the long-poll bridge handles them itself, out-of-band. Reset commands leave one status message, stop `iva.service`, wipe `.workflow-data` (where eve re-enqueues stuck runs on every startup), and start fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
 
-`/update` compares your install with the upstream repo. If a newer version exists it replies with the version bump and two buttons — **⬆️ Update** and **Skip**. Update pulls, rebuilds and restarts Iva in its own detached scope (so the restart of the bridge can't kill the update mid-flight), then reports ✅ or ❌ back in the chat. Nothing happens until you tap.
+`/update` compares your install with the upstream repo. If a newer version exists, the same message gets **⬆️ Update** and **Later** buttons. After confirmation, four compact messages show preservation, fetch, build and the final result. The active message animates by editing in place; build logs, diffs and commit IDs stay on the server. The detached updater survives the bridge restart. Nothing happens until you tap.
 
 ### /usage variants
 
@@ -39,7 +39,7 @@ The installer puts `iva` in `~/.local/bin`. Commands that touch systemd need a L
 
 | Command | What it does |
 |---|---|
-| `iva update [--force]` | git fetch + fast-forward (hard-reset if upstream was force-pushed), `npm ci` when package files changed, `eve build`, restart. `--force` rebuilds with no new commits. A failed build never restarts the service — the old build keeps running |
+| `iva update [--force] [--verbose]` | Preserve tracked and untracked changes, safely fast-forward or rebase local commits, build, restart and health-check. On failure Iva rolls back to the recorded HEAD and previous `.output`. `--force` rebuilds with no new commits; `--verbose` streams technical output otherwise kept in `data/logs/` |
 | `iva config` | The 5-step setup wizard, then offers a restart to apply |
 | `iva login [--browser]` | Sign in to an OpenAI (ChatGPT) subscription for `MODEL_PROVIDER=codex`. Default is device code (a link + one-time code, works on a headless VPS); `--browser` runs the local PKCE flow. Token → `data/codex-auth.json` (chmod 600) |
 | `iva doctor` | Checks Node ≥ 24, `.env` keys, build, units, both services, 5 memory timers, vault git origin — auto-repairs what's safe |

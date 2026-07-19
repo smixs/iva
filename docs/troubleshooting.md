@@ -52,14 +52,13 @@ ffmpeg -i note.m4a -f segment -segment_time 600 -c copy part%02d.m4a
 
 ### iva update fails after force-push
 
-Cause: versions before 0.1.7 ran `git pull --ff-only`, which aborts when `main` was rewritten upstream. Bootstrap past it once by hand:
+Cause: old versions used a destructive recovery path when upstream history changed. Re-run the current installer; it creates a backup ref, stashes tracked and untracked customizations by exact OID, and refuses an unsafe merge:
 
 ```bash
-cd ~/iva && git fetch origin main && git reset --hard origin/main
-iva update   # from here on, update handles divergence itself
+curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 ```
 
-`.env` and the vault are untracked — `reset --hard` doesn't touch them.
+Do not reset or clean the checkout. If the histories cannot be combined safely, the existing version and user files remain in place and the full reason is recorded under `data/logs/`.
 
 ### gh not available warnings
 

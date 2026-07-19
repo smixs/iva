@@ -11,6 +11,15 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
+import { modelSummary } from "../scripts/lib/model-summary.mjs";
+import { createTerminalProgress } from "../scripts/lib/progress.mjs";
+import { createTelegramUpdateReporter, loadTelegramJob, removeTelegramJob } from "../scripts/lib/telegram-status.mjs";
+import {
+  acquireUpdateLock,
+  createUpdateLog,
+  createUpdateTransaction,
+  releaseUpdateLock,
+} from "../scripts/lib/update-safety.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_PATH = join(ROOT, ".env");
@@ -39,7 +48,9 @@ const DEFAULT_PORT = "8723";
 // Former (hardcoded) default before the switch to IVA_PORT — needed to migrate old .env files.
 const OLD_DEFAULT_HOST = "http://127.0.0.1:3000";
 
-const C = { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", c: "\x1b[36m", b: "\x1b[1m", d: "\x1b[2m", x: "\x1b[0m" };
+const C = process.env.NO_COLOR || process.env.TERM === "dumb"
+  ? { g: "", y: "", r: "", c: "", b: "", d: "", x: "" }
+  : { g: "\x1b[32m", y: "\x1b[33m", r: "\x1b[31m", c: "\x1b[36m", b: "\x1b[1m", d: "\x1b[2m", x: "\x1b[0m" };
 const ok = (m) => console.log(`${C.g}✓${C.x} ${m}`);
 const warn = (m) => console.log(`${C.y}!${C.x} ${m}`);
 const bad = (m) => console.log(`${C.r}✗${C.x} ${m}`);
@@ -88,20 +99,6 @@ function requireSystemd() {
     bad("systemd unavailable — this command only works on a Linux server");
     process.exit(1);
   }
-}
-
-async function notifyTelegram(text) {
-  const env = readEnv();
-  const token = env.TELEGRAM_BOT_TOKEN;
-  const chat = env.TELEGRAM_DIGEST_CHAT_ID || (env.TELEGRAM_ALLOWED_USER_IDS || "").split(",")[0];
-  if (!token || !chat) return;
-  try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chat, text }),
-    });
-  } catch {}
 }
 
 // ── systemd units: single source of truth ─────────────────────────────────
@@ -174,7 +171,7 @@ function removeUnits() {
 // Migrate old installs to IVA_PORT. Idempotent: on the first `iva update`
 // after switching to the new scheme it guarantees the variable and keeps the server
 // (Environment=PORT=$IVA_PORT) from drifting away from clients (whose default is ASSISTANT_HOST).
-function migrateEnv() {
+function migrateEnv({ quiet = false } = {}) {
   if (!existsSync(ENV_PATH)) return false;
   const env = readEnv();
   if (env.IVA_PORT) return false; // already on the new scheme — leave it alone
@@ -187,7 +184,7 @@ function migrateEnv() {
   // don't leave a stale :3000 in ASSISTANT_HOST — otherwise clients get stuck on the taken port
   if (isOldDefault) raw = raw.replace(/^(\s*ASSISTANT_HOST\s*=).*$/m, `$1http://127.0.0.1:${port}`);
   writeFileSync(ENV_PATH, raw);
-  ok(`.env migrated → IVA_PORT=${port}${isOldDefault ? ", ASSISTANT_HOST moved off :3000" : ""}`);
+  if (!quiet) ok(`.env migrated → IVA_PORT=${port}${isOldDefault ? ", ASSISTANT_HOST moved off :3000" : ""}`);
   return true;
 }
 
@@ -258,7 +255,18 @@ function renderTreeFrame(grid, t, live) {
 }
 
 async function showTree() {
-  if (!process.stdout.isTTY) return;
+  if (!process.stdout.isTTY || process.env.NO_COLOR || process.env.TERM === "dumb") return;
+  let cursorHidden = false;
+  const restoreCursor = () => {
+    if (cursorHidden) process.stdout.write("\x1b[?25h");
+    cursorHidden = false;
+  };
+  const signals = ["SIGINT", "SIGTERM"];
+  const handlers = Object.fromEntries(signals.map((signal) => [signal, () => {
+    restoreCursor();
+    for (const name of signals) process.removeListener(name, handlers[name]);
+    process.kill(process.pid, signal);
+  }]));
   try {
     const grid = loadTreeGrid();
     if (!grid) return;
@@ -271,81 +279,157 @@ async function showTree() {
       return;
     }
     process.stdout.write("\x1b[?25l"); // hide the cursor
+    cursorHidden = true;
+    for (const signal of signals) process.once(signal, handlers[signal]);
     const FRAMES = 36, DELAY = 70;
     for (let f = 0; f < FRAMES; f++) {
       if (f > 0) process.stdout.write(`\x1b[${rows}A`);
       process.stdout.write(renderTreeFrame(grid, f * 0.7, true));
       await new Promise((r) => setTimeout(r, DELAY));
     }
-    process.stdout.write(`\x1b[${rows}A` + renderTreeFrame(grid, 0, false) + "\x1b[?25h\n");
+    process.stdout.write(`\x1b[${rows}A` + renderTreeFrame(grid, 0, false));
+    restoreCursor();
+    process.stdout.write("\n");
   } catch {
-    process.stdout.write("\x1b[?25h"); // just in case — restore the cursor
+    restoreCursor();
+  } finally {
+    for (const signal of signals) process.removeListener(signal, handlers[signal]);
   }
 }
 
 // ── commands ───────────────────────────────────────────────────────────────
 async function cmdUpdate(args) {
   const force = args.includes("--force");
+  const verbose = args.includes("--verbose");
+  const telegramJobAt = args.indexOf("--telegram-job");
+  const telegramJobId = telegramJobAt >= 0 ? args[telegramJobAt + 1] || "" : "";
+  const locale = (readEnv().AGENT_LANGUAGE || process.env.AGENT_LANGUAGE) === "ru" ? "ru" : "en";
+  const text = locale === "ru"
+    ? {
+        protect: ["Сохраняю ваши изменения", "Изменения сохранены", "Не удалось сохранить изменения"],
+        fetch: ["Получаю обновление", "Обновление получено", "Не удалось получить обновление"],
+        build: ["Собираю Iva", "Iva собрана", "Не удалось собрать Iva"],
+        current: "Iva уже обновлена",
+      }
+    : {
+        protect: ["Saving your changes", "Changes saved", "Couldn't save your changes"],
+        fetch: ["Getting the update", "Update received", "Couldn't get the update"],
+        build: ["Building Iva", "Iva built", "Couldn't build Iva"],
+        current: "Iva is already up to date",
+      };
+
   await showTree();
-  step("Updating Iva…");
-  const before = gitHead();
-  const branch = cap("git", ["rev-parse", "--abbrev-ref", "HEAD"]).out || "main";
-  const fetchRes = cap("git", ["fetch", "--prune", "origin", branch]);
-  console.log([fetchRes.out, fetchRes.err].filter(Boolean).join("\n"));
-  if (fetchRes.code !== 0) {
-    bad("git fetch failed — check the network/remote, then retry");
-    await notifyTelegram("❌ Iva update failed: couldn't reach the repo (git fetch). Old version still running.");
-    process.exit(1);
-  }
-  // Fast-forward when possible; on a rewritten upstream (force-push) the branches
-  // diverge and ff is impossible — hard-reset to the remote instead of failing.
-  // Untracked files (.env, vault, …) are preserved by reset --hard.
-  let upd = cap("git", ["merge", "--ff-only", `origin/${branch}`]);
-  if (upd.code !== 0) {
-    warn("Upstream history was rewritten — resetting to origin/" + branch);
-    upd = cap("git", ["reset", "--hard", `origin/${branch}`]);
-  }
-  console.log([upd.out, upd.err].filter(Boolean).join("\n"));
-  if (upd.code !== 0) {
-    bad("git update failed — resolve manually (git status), then retry");
-    await notifyTelegram("❌ Iva update failed: git update conflict — resolve on the server. Old version still running.");
-    process.exit(1);
-  }
-  const after = gitHead();
-  const changed = before !== after;
-  if (!changed && !force) {
-    ok(`Already up to date (${after}). Nothing to rebuild (--force to force it).`);
+  const env = readEnv();
+  const dataDir = dataDirAbs(env);
+  const loadedJob = await loadTelegramJob(dataDir, telegramJobId);
+  const reporter = loadedJob
+    ? createTelegramUpdateReporter({ token: env.TELEGRAM_BOT_TOKEN, job: loadedJob.job, env })
+    : null;
+  const terminal = createTerminalProgress({ verbose });
+  const owner = telegramJobId || `cli-${process.pid}-${Date.now()}`;
+  const lock = acquireUpdateLock(dataDir, owner);
+  if (!lock.ok) {
+    terminal.fail(locale === "ru" ? "Обновление уже идёт" : "An update is already running");
+    reporter?.dispose();
+    await removeTelegramJob(loadedJob?.path);
+    process.exitCode = 1;
     return;
   }
-  if (changed) {
-    const files = cap("git", ["diff", "--name-only", `${before}..${after}`]).out.split("\n");
-    if (files.includes("package-lock.json") || files.includes("package.json")) {
-      const hasLock = existsSync(join(ROOT, "package-lock.json"));
-      step(`Dependencies changed — npm ${hasLock ? "ci" : "install"}…`);
-      run(NPM, [hasLock ? "ci" : "install"]);
+
+  const logFile = createUpdateLog(dataDir);
+  const tx = createUpdateTransaction({ root: ROOT, dataDir, envPath: ENV_PATH, verbose, logFile, env: childEnv });
+  let phase = "protect";
+  let versions = { beforeVersion: "the previous version", afterVersion: "the new version" };
+  const phaseStart = async (name) => {
+    phase = name;
+    terminal.start(text[name][0]);
+    await reporter?.start(name);
+  };
+  const phaseDone = async (name) => {
+    terminal.done(text[name][1]);
+    await reporter?.done(name);
+  };
+
+  try {
+    await phaseStart("protect");
+    await tx.protect();
+    await phaseDone("protect");
+
+    await phaseStart("fetch");
+    const update = await tx.fetchAndIntegrate();
+    await tx.restoreLocalChanges();
+    versions = await tx.versions();
+    await phaseDone("fetch");
+
+    if (!update.changed && !force) {
+      await tx.commit();
+      terminal.info(`✅ ${text.current} (${versions.afterVersion})`);
+      await reporter?.complete({ ...versions, changedLocal: tx.hadLocalChanges });
+      return;
     }
+
+    await phaseStart("build");
+    if (update.changed) {
+      const diff = await tx.git("diff", "--name-only", `${versions.beforeHead}..${versions.afterHead}`);
+      const files = diff.stdout.split("\n");
+      if (files.includes("package.json") || files.includes("package-lock.json")) {
+        const install = await tx.run(NPM, [existsSync(join(ROOT, "package-lock.json")) ? "ci" : "install"]);
+        if (install.code !== 0) throw new Error("dependency installation failed");
+      }
+    }
+    migrateEnv({ quiet: true });
+    tx.backupOutput();
+    const build = await tx.run(NPM, ["run", "build"]);
+    if (build.code !== 0) throw new Error("build failed");
+
+    // Optional integrations never make a core update fail.
+    await tx.run(NPM, ["i", "-g", "@googleworkspace/cli@latest"]);
+
+    if (hasSystemd()) {
+      writeUnits();
+      const restarted = await tx.run("systemctl", ["--user", "restart", ...SERVICES]);
+      if (restarted.code !== 0) throw new Error("service restart failed");
+      let healthy = false;
+      const port = (readEnv().IVA_PORT || DEFAULT_PORT).trim();
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const active = SERVICES.every((service) => scQ("is-active", service).out === "active");
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(2000) });
+          if (active && response.ok) { healthy = true; break; }
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      if (!healthy) throw new Error("health check failed");
+      restartUserbotIfActive({ quiet: true });
+    }
+
+    await phaseDone("build");
+    await tx.commit();
+    const model = modelSummary(readEnv());
+    terminal.info(`✅ Iva ${locale === "ru" ? "обновлена" : "updated"}`);
+    terminal.info(`${versions.beforeVersion} → ${versions.afterVersion} · ${model.provider}/${model.model}`);
+    await reporter?.complete({ ...versions, changedLocal: tx.hadLocalChanges });
+  } catch (error) {
+    terminal.fail(text[phase][2]);
+    let rollbackOk = true;
+    try {
+      await tx.rollback();
+    } catch {
+      rollbackOk = false;
+    }
+    if (phase === "build" && hasSystemd()) {
+      writeUnits();
+      await tx.run("systemctl", ["--user", "restart", ...SERVICES]);
+    }
+    await reporter?.fail(phase, versions.beforeVersion);
+    terminal.info(`${error.message}. ${locale === "ru" ? "Откат" : "Rollback"}: ${rollbackOk ? "OK" : "FAILED"}. ${locale === "ru" ? "Лог" : "Log"}: ${logFile}`);
+    process.exitCode = 1;
+  } finally {
+    terminal.dispose();
+    reporter?.dispose();
+    releaseUpdateLock(lock);
+    await removeTelegramJob(loadedJob?.path);
   }
-  migrateEnv(); // old .env: add IVA_PORT and move off the taken :3000 (before build/restart)
-  step("Building (eve build)…");
-  if (run(NPM, ["run", "build"]).status !== 0) {
-    bad("Build failed — NOT restarting the service (the old build stays working)");
-    await notifyTelegram("❌ Iva update failed: build error. Old version still running.");
-    process.exit(1);
-  }
-  // Keep the Google Workspace CLI current alongside Iva (best-effort; Google tasks are optional).
-  step("Refreshing the Google Workspace CLI (gws)…");
-  if (cap(NPM, ["i", "-g", "@googleworkspace/cli@latest"]).code === 0) ok("gws up to date");
-  else warn("couldn't refresh gws (retry: npm i -g @googleworkspace/cli)");
-  if (hasSystemd()) {
-    step("Refreshing systemd units and restarting…");
-    restartServices();
-    ok("Restarted: iva + telegram-poll");
-    restartUserbotIfActive(); // opt-in proxy runs vendored in-repo code → restart onto the new build
-  } else {
-    warn("systemd unavailable — restart the process manually");
-  }
-  ok(`Done: ${before} → ${after}`);
-  await notifyTelegram(`✅ Iva updated: ${before} → ${after}`);
 }
 
 async function cmdConfig() {
@@ -612,7 +696,7 @@ ${C.b}Commands:${C.x}
   ${C.c}iva uninstall${C.x}       remove units and the command (--purge — delete code+vault)
   ${C.c}iva version${C.x}         version and git commit
 
-  ${C.d}flags: update --force — rebuild with no changes${C.x}
+  ${C.d}flags: update --force — rebuild with no changes; update --verbose — show technical output${C.x}
 `);
 }
 
@@ -621,21 +705,21 @@ ${C.b}Commands:${C.x}
 // Build the venv if missing and ALWAYS sync deps (idempotent), then verify the
 // critical imports actually resolve. Throws on any failure so the caller aborts
 // BEFORE enabling a service that would restart-loop on a partial install.
-function ensureUserbotVenv() {
+function ensureUserbotVenv({ quiet = false } = {}) {
   const hasUv = !!cap("sh", ["-c", "command -v uv"]).out;
-  const opts = { cwd: USERBOT_DIR };
+  const opts = { cwd: USERBOT_DIR, ...(quiet ? { stdio: "ignore" } : {}) };
   const must = (r, what) => {
     if ((r?.status ?? 1) !== 0) throw new Error(`userbot: ${what} не удалось`);
   };
   if (!existsSync(VENV_PY)) {
-    step("Создаю venv для userbot-прокси…");
+    if (!quiet) step("Создаю venv для userbot-прокси…");
     must(
       hasUv ? run("uv", ["venv", "--python", "3.12", ".venv"], opts) : run("python3", ["-m", "venv", ".venv"], opts),
       "создание venv",
     );
     if (!existsSync(VENV_PY)) throw new Error("userbot: venv не создан — проверь python3/uv");
   }
-  step("Синхронизирую зависимости userbot-прокси…");
+  if (!quiet) step("Синхронизирую зависимости userbot-прокси…");
   if (hasUv) {
     must(run("uv", ["pip", "install", "--python", VENV_PY, "-r", "requirements.txt"], opts), "установка зависимостей");
   } else {
@@ -673,16 +757,17 @@ function ensureUserbotToken() {
 
 // Restart the opt-in proxy onto fresh code/deps, but ONLY if it's already active
 // (never auto-start it for users who didn't opt in). Called from `iva update`.
-function restartUserbotIfActive() {
+function restartUserbotIfActive({ quiet = false } = {}) {
   if (scQ("is-active", SVC_USERBOT).out !== "active") return;
-  step("Обновляю userbot-прокси…");
+  if (!quiet) step("Обновляю userbot-прокси…");
   try {
-    ensureUserbotVenv();
+    ensureUserbotVenv({ quiet });
   } catch (e) {
-    warn(e.message);
+    if (!quiet) warn(e.message);
   }
-  sc("restart", SVC_USERBOT); // writeUnits already ran in restartServices()
-  ok("userbot-прокси перезапущен на новом коде");
+  if (quiet) scQ("restart", SVC_USERBOT);
+  else sc("restart", SVC_USERBOT); // writeUnits already ran in restartServices()
+  if (!quiet) ok("userbot-прокси перезапущен на новом коде");
 }
 
 function cmdUserbot(args) {

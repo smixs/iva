@@ -26,7 +26,11 @@ BRANCH="${BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/iva}"
 NODE_MAJOR_MIN=24
 
-c_blue=$'\033[34m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'; c_bold=$'\033[1m'; c_reset=$'\033[0m'
+if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = dumb ]; then
+  c_blue=""; c_green=""; c_yellow=""; c_red=""; c_bold=""; c_reset=""
+else
+  c_blue=$'\033[34m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'; c_bold=$'\033[1m'; c_reset=$'\033[0m'
+fi
 step() { echo "${c_blue}▸ $*${c_reset}"; }
 ok()   { echo "${c_green}✓ $*${c_reset}"; }
 warn() { echo "${c_yellow}! $*${c_reset}"; }
@@ -36,6 +40,55 @@ die()  { echo "${c_red}✗ $*${c_reset}" >&2; exit 1; }
 # asked as the FIRST question (pick_language below). t en ru — picks a string by language.
 IVA_LANG=en
 t() { if [ "$IVA_LANG" = ru ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+
+# Compact progress for automatic work. Prompts, sudo and the setup wizard never
+# run behind a spinner, so they remain fully readable and interactive.
+INSTALL_LOG="${TMPDIR:-/tmp}/iva-install-$$.log"
+SPINNER_PID=""
+spinner_enabled() {
+  [ -t 1 ] && [ "${IVA_NO_ANIM:-0}" != 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb
+}
+stop_spinner() {
+  if [ -n "$SPINNER_PID" ]; then
+    kill "$SPINNER_PID" 2>/dev/null || true
+    wait "$SPINNER_PID" 2>/dev/null || true
+    SPINNER_PID=""
+    printf '\r\033[2K\033[?25h'
+  fi
+}
+start_spinner() {
+  local label="$1"
+  if ! spinner_enabled; then
+    echo "◇ $label"
+    return
+  fi
+  printf '\033[?25l'
+  (
+    local frames=('◇' '◈' '◆' '◈') i=0
+    while :; do
+      printf '\r\033[2K%s %s' "${frames[$i]}" "$label"
+      i=$(( (i + 1) % 4 ))
+      sleep 0.09
+    done
+  ) &
+  SPINNER_PID=$!
+}
+run_stage() {
+  local label="$1" success="$2"
+  shift 2
+  start_spinner "$label"
+  if "$@" >>"$INSTALL_LOG" 2>&1; then
+    stop_spinner
+    ok "$success"
+    return 0
+  fi
+  local rc=$?
+  stop_spinner
+  warn "$(t "Failed: $label" "Не удалось: $label")"
+  tail -n 12 "$INSTALL_LOG" >&2 || true
+  echo "$(t "Full log:" "Полный лог:") $INSTALL_LOG" >&2
+  return "$rc"
+}
 
 show_tree() {
   [ -t 1 ] || return 0   # only in a real terminal (not in logs/CI)
@@ -76,11 +129,16 @@ IVA_TREE
 # (nvm normally does `return <non-zero>` internally — without removing the trap that's a false alarm).
 on_err() {
   local rc=$?
+  stop_spinner
+  rollback_install_update >/dev/null 2>&1 || true
   echo >&2
   echo "${c_red}✗ $(t "Install aborted (code $rc). Failing command: ${BASH_COMMAND}" "Установка прервалась (код $rc). Упала команда: ${BASH_COMMAND}")${c_reset}" >&2
-  echo "${c_yellow}  $(t "Copy the output above and send it over — we'll sort it out." "Скопируйте вывод выше и пришлите — разберёмся.")${c_reset}" >&2
+  echo "${c_yellow}  $(t "Full log:" "Полный лог:") $INSTALL_LOG${c_reset}" >&2
 }
 trap on_err ERR
+trap 'stop_spinner' EXIT
+trap 'stop_spinner; exit 130' INT
+trap 'stop_spinner; exit 143' TERM
 
 # ── Interactivity mode (modeled on NousResearch/hermes-agent) ──────────────
 # Do NOT `exec < /dev/tty`: with `curl | bash`, bash reads the script ITSELF from the stdin pipe,
@@ -124,17 +182,30 @@ prompt_yes_no() {
 # We store the choice in AGENT_LANGUAGE and export it → setup.mjs and init-vault.mjs pick it up,
 # so the language is asked exactly once.
 pick_language() {
-  local ans=""
+  local ans="" default_lang="en" existing_env=""
+  if [ -f "$INSTALL_DIR/.env" ]; then existing_env="$INSTALL_DIR/.env"
+  elif [ -f "./.env" ]; then existing_env="./.env"
+  fi
+  if [ -n "$existing_env" ]; then
+    local saved_lang
+    saved_lang="$(grep -E '^AGENT_LANGUAGE=' "$existing_env" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '"' || true)"
+    case "$saved_lang" in en|ru) default_lang="$saved_lang" ;; esac
+  fi
   if [ "$NON_INTERACTIVE" != true ]; then
     printf '\n  %b🌐 Language / Язык%b\n' "${c_bold}${c_blue}" "$c_reset"
-    printf '    [1] English  %b(default)%b\n    [2] Русский\n' "$c_green" "$c_reset"
+    if [ "$default_lang" = ru ]; then
+      printf '    [1] English\n    [2] Русский  %b(current/default)%b\n' "$c_green" "$c_reset"
+    else
+      printf '    [1] English  %b(current/default)%b\n    [2] Русский\n' "$c_green" "$c_reset"
+    fi
     if   [ "$IS_INTERACTIVE" = true ]; then read -r -p "  > " ans || ans=""
     elif have_tty; then printf '  > ' > /dev/tty; IFS= read -r ans < /dev/tty || ans=""
     else ans=""; fi
   fi
   case "$(printf '%s' "$ans" | tr -d '[:space:]')" in
     2|ru|RU|[Рр]ус*) IVA_LANG=ru ;;
-    *) IVA_LANG=en ;;
+    1|en|EN) IVA_LANG=en ;;
+    *) IVA_LANG="$default_lang" ;;
   esac
   export AGENT_LANGUAGE="$IVA_LANG"
 }
@@ -291,6 +362,79 @@ fi
 command -v node >/dev/null 2>&1 || die "$(t "Node $NODE_MAJOR_MIN+ failed to install. Install it manually (nvm install $NODE_MAJOR_MIN) and re-run." "Node $NODE_MAJOR_MIN+ не установился. Поставьте вручную (nvm install $NODE_MAJOR_MIN) и перезапустите.")"
 ok "Node $(node -v)"
 
+# A re-run over an existing checkout uses the same preservation contract as
+# `iva update`: exact stash OID, backup ref, no git clean and no reset to remote.
+INSTALL_UPDATE_ACTIVE=false
+INSTALL_ORIGINAL_HEAD=""
+INSTALL_STASH_OID=""
+INSTALL_BACKUP_REF=""
+INSTALL_ENV_BACKUP=""
+INSTALL_OUTPUT_BACKUP=""
+INSTALL_UNTRACKED_LIST=""
+
+prepare_install_update() {
+  INSTALL_ORIGINAL_HEAD="$(git -C "$PROJECT_DIR" rev-parse HEAD)"
+  INSTALL_BACKUP_REF="refs/iva/update-backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  git -C "$PROJECT_DIR" update-ref "$INSTALL_BACKUP_REF" "$INSTALL_ORIGINAL_HEAD"
+
+  INSTALL_UNTRACKED_LIST="$(mktemp "${TMPDIR:-/tmp}/iva-untracked.XXXXXX")"
+  git -C "$PROJECT_DIR" ls-files --others --exclude-standard -z >"$INSTALL_UNTRACKED_LIST"
+  if [ -f "$PROJECT_DIR/.env" ]; then
+    INSTALL_ENV_BACKUP="$(mktemp "${TMPDIR:-/tmp}/iva-env.XXXXXX")"
+    cp -p "$PROJECT_DIR/.env" "$INSTALL_ENV_BACKUP"
+    chmod 600 "$INSTALL_ENV_BACKUP"
+  fi
+
+  if [ -n "$(git -C "$PROJECT_DIR" status --porcelain=v1 --untracked-files=all)" ]; then
+    git -C "$PROJECT_DIR" stash push --include-untracked --message "iva-install-$(date -u +%Y%m%dT%H%M%SZ)-$$" >>"$INSTALL_LOG" 2>&1
+    INSTALL_STASH_OID="$(git -C "$PROJECT_DIR" rev-parse refs/stash)"
+  fi
+  INSTALL_UPDATE_ACTIVE=true
+}
+
+restore_install_stash() {
+  [ -n "$INSTALL_STASH_OID" ] || return 0
+  git -C "$PROJECT_DIR" stash apply --index "$INSTALL_STASH_OID" >>"$INSTALL_LOG" 2>&1
+}
+
+rollback_install_update() {
+  [ "$INSTALL_UPDATE_ACTIVE" = true ] || return 0
+  set +e
+  git -C "$PROJECT_DIR" rebase --abort >>"$INSTALL_LOG" 2>&1
+  # This exact reset is rollback to the user's recorded HEAD, never to upstream.
+  git -C "$PROJECT_DIR" reset --hard "$INSTALL_ORIGINAL_HEAD" >>"$INSTALL_LOG" 2>&1
+  if [ -n "$INSTALL_UNTRACKED_LIST" ] && [ -f "$INSTALL_UNTRACKED_LIST" ]; then
+    while IFS= read -r -d '' relative; do
+      rm -f -- "$PROJECT_DIR/$relative"
+    done <"$INSTALL_UNTRACKED_LIST"
+  fi
+  restore_install_stash
+  if [ -n "$INSTALL_ENV_BACKUP" ] && [ -f "$INSTALL_ENV_BACKUP" ]; then
+    cp -p "$INSTALL_ENV_BACKUP" "$PROJECT_DIR/.env"
+    chmod 600 "$PROJECT_DIR/.env"
+  fi
+  if [ -n "$INSTALL_OUTPUT_BACKUP" ] && [ -e "$INSTALL_OUTPUT_BACKUP" ]; then
+    rm -rf -- "$PROJECT_DIR/.output"
+    mv "$INSTALL_OUTPUT_BACKUP" "$PROJECT_DIR/.output"
+  fi
+  INSTALL_UPDATE_ACTIVE=false
+  set -e
+}
+
+finish_install_update() {
+  [ "$INSTALL_UPDATE_ACTIVE" = true ] || return 0
+  if [ -n "$INSTALL_STASH_OID" ]; then
+    local stash_ref
+    stash_ref="$(git -C "$PROJECT_DIR" stash list --format='%gd %H' | awk -v oid="$INSTALL_STASH_OID" '$2 == oid {print $1; exit}')"
+    [ -z "$stash_ref" ] || git -C "$PROJECT_DIR" stash drop "$stash_ref" >>"$INSTALL_LOG" 2>&1
+  fi
+  git -C "$PROJECT_DIR" update-ref -d "$INSTALL_BACKUP_REF"
+  [ -z "$INSTALL_OUTPUT_BACKUP" ] || rm -rf -- "$INSTALL_OUTPUT_BACKUP"
+  [ -z "$INSTALL_ENV_BACKUP" ] || rm -f -- "$INSTALL_ENV_BACKUP"
+  [ -z "$INSTALL_UNTRACKED_LIST" ] || rm -f -- "$INSTALL_UNTRACKED_LIST"
+  INSTALL_UPDATE_ACTIVE=false
+}
+
 # ─────────────────────────────────────────────────────────────────────────
 # 4. Project code (current directory / update / clone)
 # ─────────────────────────────────────────────────────────────────────────
@@ -304,20 +448,31 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/package.json" ] && grep -q '"eve"' 
   step "$(t "Using current directory: $PROJECT_DIR" "Использую текущий каталог: $PROJECT_DIR")"
 elif [ -d "$INSTALL_DIR/.git" ]; then
   PROJECT_DIR="$INSTALL_DIR"
-  step "$(t "Updating $PROJECT_DIR…" "Обновляю $PROJECT_DIR…")"
-  git -C "$PROJECT_DIR" fetch --prune origin "$BRANCH"
-  # Fast-forward when possible; on a rewritten upstream (force-push) the branches
-  # diverge and ff is impossible — hard-reset to the remote instead of aborting.
-  # Untracked files (.env, vault, …) are preserved by reset --hard.
-  if git -C "$PROJECT_DIR" merge --ff-only "origin/$BRANCH" 2>/dev/null; then
-    :
+  start_spinner "$(t "Saving your changes" "Сохраняю ваши изменения")"
+  prepare_install_update
+  stop_spinner
+  ok "$(t "Changes saved" "Изменения сохранены")"
+  start_spinner "$(t "Getting the update" "Получаю обновление")"
+  if git -C "$PROJECT_DIR" fetch --prune origin "$BRANCH" >>"$INSTALL_LOG" 2>&1; then
+    remote_ref="origin/$BRANCH"
+    if git -C "$PROJECT_DIR" merge-base --is-ancestor HEAD "$remote_ref"; then
+      git -C "$PROJECT_DIR" merge --ff-only "$remote_ref" >>"$INSTALL_LOG" 2>&1
+    elif git -C "$PROJECT_DIR" merge-base --is-ancestor "$remote_ref" HEAD; then
+      : # local commits are already ahead; preserve them as-is
+    else
+      git -C "$PROJECT_DIR" rebase "$remote_ref" >>"$INSTALL_LOG" 2>&1
+    fi
+    restore_install_stash
+    stop_spinner
+    ok "$(t "Update received" "Обновление получено")"
   else
-    warn "$(t "Upstream history was rewritten — resetting to origin/$BRANCH (local commits to tracked files are discarded)." "История на сервере переписана — сбрасываю на origin/$BRANCH (локальные правки отслеживаемых файлов будут потеряны).")"
-    git -C "$PROJECT_DIR" reset --hard "origin/$BRANCH"
+    stop_spinner
+    rollback_install_update
+    die "$(t "Couldn't safely combine the update; the previous checkout was restored." "Не удалось безопасно объединить обновление; прежнее состояние восстановлено.")"
   fi
 else
-  step "$(t "Cloning $REPO_URL → $INSTALL_DIR…" "Клонирую $REPO_URL → $INSTALL_DIR…")"
-  git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  run_stage "$(t "Cloning Iva" "Клонирую Iva")" "$(t "Iva downloaded" "Iva загружена")" \
+    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
   PROJECT_DIR="$INSTALL_DIR"
 fi
 cd "$PROJECT_DIR"
@@ -325,9 +480,11 @@ cd "$PROJECT_DIR"
 # ─────────────────────────────────────────────────────────────────────────
 # 5. npm dependencies
 # ─────────────────────────────────────────────────────────────────────────
-step "$(t "Installing dependencies…" "Ставлю зависимости…")"
-if [ -f package-lock.json ]; then npm ci; else npm install; fi
-ok "$(t "Dependencies installed" "Зависимости установлены")"
+if [ -f package-lock.json ]; then
+  run_stage "$(t "Installing dependencies" "Ставлю зависимости")" "$(t "Dependencies installed" "Зависимости установлены")" npm ci
+else
+  run_stage "$(t "Installing dependencies" "Ставлю зависимости")" "$(t "Dependencies installed" "Зависимости установлены")" npm install
+fi
 
 # ─────────────────────────────────────────────────────────────────────────
 # 5b. agent-browser (web automation: forms, logins, screenshots, scraping)
@@ -335,16 +492,12 @@ ok "$(t "Dependencies installed" "Зависимости установлены"
 # The binary installs into npm-global; the path is needed here and in the service PATH (below).
 NPM_GLOBAL_BIN="$(npm prefix -g 2>/dev/null)/bin"
 export PATH="$NPM_GLOBAL_BIN:$PATH"
-step "$(t "Installing the agent-browser (for web tasks)" "Ставлю браузер agent-browser (для веб-задач)")"
-echo "  ${c_yellow}$(t "Next it downloads Chromium and system libraries — the longest step (1–3 min)." "Дальше скачается Chromium и системные библиотеки — это дольше всего (1–3 мин).")${c_reset}"
-echo "  ${c_yellow}$(t "The output below = work under the hood, do NOT interrupt. It may ask for the sudo password again." "Поток вывода ниже = работа идёт под капотом, НЕ прерывай. Может снова спросить пароль sudo.")${c_reset}"
+echo "  ${c_yellow}$(t "Chromium and its system libraries may take 1–3 minutes." "Chromium и системные библиотеки могут устанавливаться 1–3 минуты.")${c_reset}"
 # Refresh the sudo cache ahead of time (a visible prompt here, not a hidden one mid-install).
 if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then sudo -v 2>/dev/null || true; fi
-# Don't silence the output: the user should see progress (download/apt), otherwise it looks frozen.
-if npm i -g agent-browser; then
-  step "$(t "Downloading Chromium + system libraries…" "Скачиваю Chromium + системные библиотеки…")"
-  agent-browser install --with-deps \
-    || warn "$(t "agent-browser install --with-deps failed — finish later: agent-browser install --with-deps" "agent-browser install --with-deps не прошёл — доставишь позже: agent-browser install --with-deps")"
+if run_stage "$(t "Installing agent-browser" "Ставлю agent-browser")" "$(t "agent-browser installed" "agent-browser установлен")" npm i -g agent-browser; then
+  run_stage "$(t "Downloading Chromium" "Скачиваю Chromium")" "$(t "Chromium ready" "Chromium готов")" agent-browser install --with-deps \
+    || warn "$(t "Finish later: agent-browser install --with-deps" "Завершите позже: agent-browser install --with-deps")"
   # Chrome won't start on Ubuntu 23.10+/24.04: the kernel forbids unprivileged user
   # namespaces (AppArmor) → "No usable sandbox". On Linux, enable --no-sandbox by
   # default for all agent-browser calls (idempotent, without clobbering an existing config).
@@ -371,8 +524,7 @@ fi
 # Google-service tasks are optional. Binary lands in npm-global (already on PATH).
 # Auth is per-user and interactive — the bot walks the user through it in chat
 # (agent skill `google-workspace`); nothing to configure here.
-step "$(t "Installing the Google Workspace CLI (gws)…" "Ставлю Google Workspace CLI (gws)…")"
-if npm i -g @googleworkspace/cli@latest >/dev/null 2>&1 && command -v gws >/dev/null 2>&1; then
+if run_stage "$(t "Installing Google Workspace CLI" "Ставлю Google Workspace CLI")" "$(t "gws installed" "gws установлен")" npm i -g @googleworkspace/cli@latest && command -v gws >/dev/null 2>&1; then
   ok "$(t "gws ready — connect Google later: message the bot \"connect Google\"" "gws готов — Google подключишь позже: напиши боту «подключи Google»")"
 else
   warn "$(t "couldn't install gws — Google-service tasks unavailable, everything else works (retry: npm i -g @googleworkspace/cli)" "не удалось поставить gws — задачи с Google-сервисами недоступны, остальное работает (повторить: npm i -g @googleworkspace/cli)")"
@@ -395,9 +547,11 @@ fi
 # ─────────────────────────────────────────────────────────────────────────
 # 7. Build
 # ─────────────────────────────────────────────────────────────────────────
-step "$(t "Building the agent (eve build)…" "Собираю агента (eve build)…")"
-npm exec -- eve build
-ok "$(t "Build ready → .output" "Сборка готова → .output")"
+if [ "$INSTALL_UPDATE_ACTIVE" = true ] && [ -e .output ]; then
+  INSTALL_OUTPUT_BACKUP="$PROJECT_DIR/.output.iva-install-backup-$$"
+  mv .output "$INSTALL_OUTPUT_BACKUP"
+fi
+run_stage "$(t "Building Iva" "Собираю Iva")" "$(t "Build ready → .output" "Сборка готова → .output")" npm exec -- eve build
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8. Live vault: a SEPARATE private git repo (memory + backup + Obsidian)
@@ -470,6 +624,8 @@ elif prompt_yes_no "$(t "Set up autostart via systemd (service + memory timers)?
       || warn "$(t "couldn't send the confirmation (the bot still works — just message it)" "не смог отправить подтверждение (бот всё равно работает — просто напишите ему)")"
   fi
 fi
+
+finish_install_update
 
 # ─────────────────────────────────────────────────────────────────────────
 # 10. Final
