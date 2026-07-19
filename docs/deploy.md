@@ -43,7 +43,7 @@ Note: `getUpdates` — which the setup wizard uses to discover your user ID — 
 | `iva-memory-doctor.timer` | 05:00 nightly | schema/health/decay/MOC checks + vault `git push` |
 | `iva-update-check.timer` | 10:00 daily | check for a newer stable Iva version; notify once per version |
 
-Timers fire in the server's **local time** and carry `Persistent=true`, so a run missed during downtime fires after reboot. Set the server clock to match your `.env`:
+Memory timers fire in the server's **local time**. The update timer embeds `ASSISTANT_TIMEZONE` directly, so its 10:00 schedule remains correct even when the server clock uses UTC. All timers carry `Persistent=true`, so a run missed during downtime fires after reboot. Keeping the server clock aligned is still recommended:
 
 ```bash
 sudo timedatectl set-timezone "$ASSISTANT_TIMEZONE"

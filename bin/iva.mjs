@@ -138,12 +138,15 @@ function writeUnits() {
   writeFileSync(join(UNIT_DIR, "iva.service"), ivaServiceBody());
   const written = ["iva.service"];
   const deploy = join(ROOT, "deploy");
+  const configuredTimezone = (readEnv().ASSISTANT_TIMEZONE || "UTC").trim();
+  const timezone = /^[A-Za-z0-9_+\/-]+$/.test(configuredTimezone) ? configuredTimezone : "UTC";
   for (const f of readdirSync(deploy)) {
     if (!/^iva-.*\.(service|timer)$/.test(f)) continue;
     const tpl = readFileSync(join(deploy, f), "utf8")
       .replaceAll("__PROJECT_DIR__", ROOT)
       .replaceAll("__NODE_BIN__", NODE)
-      .replaceAll("__PYTHON_BIN__", VENV_PY);
+      .replaceAll("__PYTHON_BIN__", VENV_PY)
+      .replaceAll("__TIMEZONE__", timezone);
     writeFileSync(join(UNIT_DIR, f), tpl);
     written.push(f);
   }

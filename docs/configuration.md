@@ -45,7 +45,7 @@ For `codex` there is no API key in `.env`: run `iva login` (device code, headles
 
 The allowlist is **fail-closed: empty means Iva answers nobody.** The wizard auto-discovers your ID the moment you message the bot; or ask [@userinfobot](https://t.me/userinfobot). Why fail-closed matters: [security.md](./security.md).
 
-At 10:00 local time Iva checks Git upstream without using the model. It sends nothing unless a higher stable `MAJOR.MINOR.PATCH` version exists, and offers each version only once. If `TELEGRAM_DIGEST_CHAT_ID` is empty, the first trusted ID is used.
+At 10:00 in `ASSISTANT_TIMEZONE` Iva checks Git upstream without using the model. It sends nothing unless a higher stable `MAJOR.MINOR.PATCH` version exists, and offers each version only once. If `TELEGRAM_DIGEST_CHAT_ID` is empty, the first trusted ID is used.
 
 ## Voice
 
