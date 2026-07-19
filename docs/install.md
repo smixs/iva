@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash -s
 | `--non-interactive` | no questions at all — defaults only, wizard skipped |
 | `-h`, `--help` | show the built-in help and exit |
 | `REPO_URL=…` | install from a fork (default `https://github.com/smixs/iva.git`) |
-| `BRANCH=…` | install a branch (default `main`) |
+| `BRANCH=…` | install and keep updating from this branch (default `main`) |
 | `INSTALL_DIR=…` | where the code goes (default `~/iva`) |
 
 The last three are environment variables, read by the script at startup.

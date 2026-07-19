@@ -23,6 +23,7 @@ set -Eeuo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/smixs/iva.git}"
 BRANCH="${BRANCH:-main}"
+UPDATE_CHANNEL="$BRANCH"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/iva}"
 NODE_MAJOR_MIN=24
 
@@ -445,6 +446,8 @@ if [ -n "$SOURCE" ] && [ -f "$SOURCE" ]; then
 fi
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/package.json" ] && grep -q '"eve"' "$SCRIPT_DIR/package.json"; then
   PROJECT_DIR="$SCRIPT_DIR"
+  UPDATE_CHANNEL="$(git -C "$PROJECT_DIR" branch --show-current 2>/dev/null || true)"
+  UPDATE_CHANNEL="${UPDATE_CHANNEL:-main}"
   step "$(t "Using current directory: $PROJECT_DIR" "Использую текущий каталог: $PROJECT_DIR")"
 elif [ -d "$INSTALL_DIR/.git" ]; then
   PROJECT_DIR="$INSTALL_DIR"
@@ -453,8 +456,8 @@ elif [ -d "$INSTALL_DIR/.git" ]; then
   stop_spinner
   ok "$(t "Changes saved" "Изменения сохранены")"
   start_spinner "$(t "Getting the update" "Получаю обновление")"
-  if git -C "$PROJECT_DIR" fetch --prune origin "$BRANCH" >>"$INSTALL_LOG" 2>&1; then
-    remote_ref="origin/$BRANCH"
+  if git -C "$PROJECT_DIR" fetch --prune origin "refs/heads/$BRANCH" >>"$INSTALL_LOG" 2>&1; then
+    remote_ref="$(git -C "$PROJECT_DIR" rev-parse FETCH_HEAD)"
     if git -C "$PROJECT_DIR" merge-base --is-ancestor HEAD "$remote_ref"; then
       git -C "$PROJECT_DIR" merge --ff-only "$remote_ref" >>"$INSTALL_LOG" 2>&1
     elif git -C "$PROJECT_DIR" merge-base --is-ancestor "$remote_ref" HEAD; then
@@ -626,6 +629,8 @@ elif prompt_yes_no "$(t "Set up autostart via systemd (service + memory timers)?
       || warn "$(t "couldn't send the confirmation (the bot still works — just message it)" "не смог отправить подтверждение (бот всё равно работает — просто напишите ему)")"
   fi
 fi
+
+git -C "$PROJECT_DIR" config --local iva.updateBranch "$UPDATE_CHANNEL"
 
 finish_install_update
 

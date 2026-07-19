@@ -81,10 +81,62 @@ test("a locally ahead repository has no upstream update", async () => {
   assert.equal(info.hasVersionUpdate, false);
 });
 
+test("a merged legacy feature branch discovers updates from main", async () => {
+  const { seed, local } = repoFixture();
+  git(seed, "branch", "feat/legacy");
+  git(seed, "push", "origin", "feat/legacy");
+  git(local, "fetch", "origin", "feat/legacy");
+  git(local, "switch", "-c", "feat/legacy", "FETCH_HEAD");
+
+  writeFileSync(join(seed, "package.json"), '{"name":"iva","version":"1.3.0"}\n');
+  git(seed, "add", "package.json");
+  git(seed, "commit", "-m", "release");
+  git(seed, "push", "origin", "main");
+
+  const info = await inspectUpstream({ root: local });
+  assert.equal(info.currentBranch, "feat/legacy");
+  assert.equal(info.branch, "main");
+  assert.equal(info.legacyMigration, true);
+  assert.equal(info.remote, git(seed, "rev-parse", "HEAD"));
+  assert.equal(info.hasVersionUpdate, true);
+});
+
+test("an explicitly configured feature channel does not drift to main", async () => {
+  const { seed, local } = repoFixture();
+  git(seed, "switch", "-c", "feat/beta");
+  writeFileSync(join(seed, "beta.txt"), "beta\n");
+  git(seed, "add", "beta.txt");
+  git(seed, "commit", "-m", "beta");
+  git(seed, "push", "-u", "origin", "feat/beta");
+  git(local, "fetch", "origin", "feat/beta");
+  git(local, "switch", "-c", "feat/beta", "FETCH_HEAD");
+  git(local, "config", "iva.updateBranch", "feat/beta");
+
+  git(seed, "switch", "main");
+  writeFileSync(join(seed, "package.json"), '{"name":"iva","version":"2.0.0"}\n');
+  git(seed, "add", "package.json");
+  git(seed, "commit", "-m", "main release");
+  git(seed, "push", "origin", "main");
+
+  const info = await inspectUpstream({ root: local });
+  assert.equal(info.branch, "feat/beta");
+  assert.equal(info.legacyMigration, false);
+  assert.equal(info.hasCommitUpdate, false);
+  assert.equal(info.remoteVersion, "1.2.3");
+});
+
 test("notification target prefers digest chat and falls back to the first trusted user", () => {
   assert.equal(notificationChat({ TELEGRAM_DIGEST_CHAT_ID: "99", TELEGRAM_ALLOWED_USER_IDS: "1,2" }), "99");
   assert.equal(notificationChat({ TELEGRAM_ALLOWED_USER_IDS: " 1, 2" }), "1");
   assert.equal(notificationChat({}), "");
+});
+
+test("installer persists the selected update channel and integrates the fetched oid", () => {
+  const installer = readFileSync(new URL("../../install.sh", import.meta.url), "utf8");
+  assert.match(installer, /config --local iva\.updateBranch "\$UPDATE_CHANNEL"/);
+  assert.match(installer, /UPDATE_CHANNEL="\$\(git -C "\$PROJECT_DIR" branch --show-current/);
+  assert.match(installer, /remote_ref="\$\(git -C "\$PROJECT_DIR" rev-parse FETCH_HEAD\)"/);
+  assert.doesNotMatch(installer, /remote_ref="origin\/\$BRANCH"/);
 });
 
 test("notification state is atomic, private and readable", async () => {

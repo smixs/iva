@@ -1,14 +1,25 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolveUpdateTarget } from "./update-channel.mjs";
 
 function git(root, args) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     execFile("git", ["-C", root, ...args], { maxBuffer: 1 << 20 }, (error, stdout, stderr) => {
-      if (error) return reject(new Error((stderr || error.message).trim()));
-      resolve((stdout || "").trim());
+      resolve({
+        code: typeof error?.code === "number" ? error.code : error ? 1 : 0,
+        stdout: (stdout || "").trim(),
+        stderr: (stderr || error?.message || "").trim(),
+      });
     });
   });
+}
+
+async function requireGit(gitImpl, root, args) {
+  const result = await gitImpl(root, args);
+  if (typeof result === "string") return result;
+  if (result.code !== 0) throw new Error(result.stderr || result.stdout || `git ${args[0]} failed`);
+  return result.stdout;
 }
 
 function packageVersion(jsonText) {
@@ -38,19 +49,22 @@ export function compareStableVersions(localVersion, remoteVersion) {
 
 export async function inspectUpstream({ root, remote = "origin", gitImpl = git } = {}) {
   if (!root) throw new Error("update check requires a repository root");
-  const branch = (await gitImpl(root, ["rev-parse", "--abbrev-ref", "HEAD"])) || "main";
-  if (branch === "HEAD") throw new Error("cannot check updates from a detached HEAD");
-  await gitImpl(root, ["fetch", "--prune", remote, branch]);
-  const local = await gitImpl(root, ["rev-parse", "HEAD"]);
-  const remoteRef = `${remote}/${branch}`;
-  const remoteHead = await gitImpl(root, ["rev-parse", remoteRef]);
-  const behind = Number(await gitImpl(root, ["rev-list", "--count", `HEAD..${remoteRef}`])) || 0;
-  const localVersion = packageVersion(await gitImpl(root, ["show", "HEAD:package.json"]));
-  const remoteVersion = packageVersion(await gitImpl(root, ["show", `${remoteRef}:package.json`]));
+  const run = async (...args) => {
+    const result = await gitImpl(root, args);
+    return typeof result === "string" ? { code: 0, stdout: result, stderr: "" } : result;
+  };
+  const target = await resolveUpdateTarget({ git: run, remote });
+  const local = await requireGit(gitImpl, root, ["rev-parse", "HEAD"]);
+  const remoteHead = target.targetHead;
+  const behind = Number(await requireGit(gitImpl, root, ["rev-list", "--count", `HEAD..${remoteHead}`])) || 0;
+  const localVersion = packageVersion(await requireGit(gitImpl, root, ["show", "HEAD:package.json"]));
+  const remoteVersion = packageVersion(await requireGit(gitImpl, root, ["show", `${remoteHead}:package.json`]));
   const versionComparison = compareStableVersions(localVersion, remoteVersion);
   const hasCommitUpdate = behind > 0 && local !== remoteHead;
   return {
-    branch,
+    branch: target.branch,
+    currentBranch: target.currentBranch,
+    legacyMigration: target.legacyMigration,
     local,
     remote: remoteHead,
     behind,
