@@ -335,6 +335,42 @@ test("safe update preserves staged, unstaged and untracked user files", async ()
   assert.equal(git(local, "stash", "list"), "");
 });
 
+test("safe update migrates a merged legacy branch to the main channel", async () => {
+  const temp = mkdtempSync(join(tmpdir(), "iva-update-channel-"));
+  const remote = join(temp, "remote.git");
+  const seed = join(temp, "seed");
+  const local = join(temp, "local");
+  const data = join(temp, "data");
+  git(temp, "init", "--bare", remote);
+  git(temp, "init", "-b", "main", seed);
+  configureGit(seed);
+  writeFileSync(join(seed, "package.json"), JSON.stringify({ version: "1.0.0" }));
+  writeFileSync(join(seed, "base.txt"), "base\n");
+  git(seed, "add", ".");
+  git(seed, "commit", "-m", "base");
+  git(seed, "branch", "feat/legacy");
+  git(seed, "remote", "add", "origin", remote);
+  git(seed, "push", "origin", "main", "feat/legacy");
+  git(temp, "clone", "--branch", "feat/legacy", remote, local);
+  configureGit(local);
+
+  writeFileSync(join(seed, "upstream.txt"), "main update\n");
+  git(seed, "add", "upstream.txt");
+  git(seed, "commit", "-m", "main update");
+  git(seed, "push", "origin", "main");
+  const expected = git(seed, "rev-parse", "HEAD");
+
+  const tx = createUpdateTransaction({ root: local, dataDir: data, envPath: join(local, ".env"), logFile: join(temp, "log") });
+  await tx.protect();
+  const update = await tx.fetchAndIntegrate();
+  await tx.restoreLocalChanges();
+  assert.equal(update.legacyMigration, true);
+  assert.equal(update.branch, "main");
+  assert.equal(git(local, "rev-parse", "HEAD"), expected);
+  await tx.commit();
+  assert.equal(git(local, "config", "--local", "--get", "iva.updateBranch"), "main");
+});
+
 function updateFixture() {
   const temp = mkdtempSync(join(tmpdir(), "iva-update-failure-"));
   const remote = join(temp, "remote.git");
