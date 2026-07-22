@@ -225,6 +225,38 @@ test("update callback is acknowledged before any message edit", async () => {
   }
 });
 
+test("up-to-date check shows the model from fresh .env, not this process's snapshot", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousEnv = Object.fromEntries(
+    ["TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "MODEL_PROVIDER", "OPENCODE_MODEL"].map((k) => [k, process.env[k]]),
+  );
+  process.env.TELEGRAM_BOT_TOKEN = "token";
+  process.env.TELEGRAM_ALLOWED_USER_IDS = "42";
+  // The bridge's snapshot is stale: the /model wizard rewrote .env after this process started.
+  process.env.MODEL_PROVIDER = "opencode";
+  process.env.OPENCODE_MODEL = "stale-model";
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ method: url.split("/").at(-1), body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 10 } }) };
+  };
+  try {
+    const bridge = await import(`../telegram-poll.mjs?fresh=${Date.now()}`);
+    await bridge.handleUpdateCheck(1, {
+      inspectImpl: async () => ({ hasCommitUpdate: false, localVersion: "1.2.3" }),
+      envImpl: async () => ({ MODEL_PROVIDER: "codex", CODEX_MODEL: "fresh-model" }),
+    });
+    const edit = calls.find((call) => call.method === "editMessageText");
+    assert.match(edit.body.text, /OpenAI · fresh-model/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("manual update offer keeps commit-based behavior and marks a stable release as shown", async () => {
   const previousFetch = globalThis.fetch;
   const previousToken = process.env.TELEGRAM_BOT_TOKEN;

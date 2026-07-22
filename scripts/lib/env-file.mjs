@@ -25,6 +25,13 @@ export async function readEnvValues(path) {
   }
 }
 
+// Base env refreshed with the current .env file: file values win, base-only keys survive.
+// For long-running processes (the Telegram bridge) whose process.env snapshot goes stale
+// after the /model wizard edits .env — display code must read through this, not process.env.
+export async function readEnvFresh(path, base = process.env) {
+  return { ...base, ...(await readEnvValues(path)) };
+}
+
 // Upsert keys in .env: updates = {KEY: string | null} (null ⇒ drop the line).
 // First matching line is replaced in place, duplicates are dropped, missing keys are
 // appended at the end. Values must be single-line — a multiline paste (e.g. a mangled

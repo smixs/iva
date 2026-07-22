@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 import { chmod, mkdtemp, readFile, writeFile, stat, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseEnvText, readEnvValues, upsertEnv } from "./env-file.mjs";
+import { parseEnvText, readEnvFresh, readEnvValues, upsertEnv } from "./env-file.mjs";
 
 const dir = await mkdtemp(join(tmpdir(), "env-file-test-"));
 const p = join(dir, ".env");
@@ -36,6 +36,14 @@ assert.equal(await readFile(p, "utf8"), "A=x\nB=2\n");
 // multiline value must throw, not corrupt the file.
 await assert.rejects(() => upsertEnv(p, { KEY: "line1\nline2" }), /newline/);
 assert.equal(await readFile(p, "utf8"), "A=x\nB=2\n", "file untouched after reject");
+
+// fresh read: file values win over the (stale) base snapshot; base-only keys survive.
+await writeFile(p, "MODEL_PROVIDER=codex\nCODEX_MODEL=gpt-5.6\n");
+assert.deepEqual(
+  await readEnvFresh(p, { MODEL_PROVIDER: "opencode", OPENCODE_MODEL: "kimi-k3", PATH: "/usr/bin" }),
+  { MODEL_PROVIDER: "codex", CODEX_MODEL: "gpt-5.6", OPENCODE_MODEL: "kimi-k3", PATH: "/usr/bin" },
+);
+assert.deepEqual(await readEnvFresh(join(dir, "missing"), { A: "1" }), { A: "1" }, "missing file → base as-is");
 
 await rm(dir, { recursive: true, force: true });
 console.log("env-file: all assertions passed");

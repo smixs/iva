@@ -15,7 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/usage.mjs";
-import { readEnvValues, upsertEnv } from "./lib/env-file.mjs";
+import { readEnvFresh, readEnvValues, upsertEnv } from "./lib/env-file.mjs";
 import { CATALOG, EFFORTS, fetchModels, checkKey } from "./lib/model-catalog.mjs";
 import { getAccessToken, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 import { compactNumber, modelSummary } from "./lib/model-summary.mjs";
@@ -215,7 +215,7 @@ function launchSelfUpdate(jobId) {
 
 export async function handleUpdateCheck(
   chatId,
-  { inspectImpl = inspectUpstream, markNotifiedImpl = markVersionNotified } = {},
+  { inspectImpl = inspectUpstream, markNotifiedImpl = markVersionNotified, envImpl = () => readEnvFresh(ENV_PATH) } = {},
 ) {
   const status = await reply(chatId, t("◇ Checking for updates", "◇ Проверяю обновления"));
   if (!status) return;
@@ -227,7 +227,9 @@ export async function handleUpdateCheck(
     return;
   }
   if (!info.hasCommitUpdate) {
-    const model = modelSummary(process.env);
+    // Not modelSummary(process.env): the /model wizard edits .env at runtime and restarts
+    // only the agent — this bridge keeps running, so its env snapshot may hold the old model.
+    const model = modelSummary(await envImpl());
     await edit(chatId, status.message_id, t(
       `✅ You're up to date\n\nIva v${info.localVersion ?? "?"}\nModel: ${model.line}`,
       `✅ У вас актуальная версия\n\nIva v${info.localVersion ?? "?"}\nМодель: ${model.line}`,
@@ -655,7 +657,8 @@ async function handleControl(update) {
     return true;
   }
   // /restart, /new, /clear, /compact → process restart (reliable reset/recovery).
-  const resetCopy = resetMessageCopy(cmd);
+  // Fresh .env, not this process's snapshot — see the same note in handleUpdateCheck.
+  const resetCopy = resetMessageCopy(cmd, await readEnvFresh(ENV_PATH));
   const status = await reply(chatId, resetCopy.pending);
   const ok = await restartAgent();
   if (!status) return true;
