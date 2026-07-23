@@ -12,7 +12,7 @@
 [![built on eve](https://img.shields.io/badge/built%20on-eve-000000?logo=vercel&logoColor=white)](https://eve.dev/docs/introduction)
 [![Node 24](https://img.shields.io/badge/node-24.x-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 
-[Features](#features) · [Quick start](#quick-start) · [Memory](#memory--the-part-that-compounds) · [Docs](#documentation)
+[Use cases](#why-people-run-iva) · [Features](#features) · [Quick start](#quick-start) · [Memory](#memory--the-part-that-compounds) · [Docs](#documentation)
 
 </div>
 
@@ -23,6 +23,8 @@ Iva is a self-hosted Telegram AI assistant with layered memory that turns your m
 ```bash
 curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 ```
+
+**Wondering what you'd actually use an agent for?** → [25+ real scenarios — business, work, everyday life](docs/use-cases.md).
 
 ## What's New 🔥
 
@@ -37,6 +39,14 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 - **[29.06.2026] v0.1.7** 👁️ Iva sees images — described by your provider's own vision model on the same key, with OCR; any attachment type no longer crashes the turn; nightly rollup records your corrections into CORE, so a fix you make today is followed tomorrow
 
 Full history — [CHANGELOG.md](CHANGELOG.md).
+
+## Why people run Iva
+
+- "What did we agree with client X about the last shipment?" — found in seconds, months later.
+- A five-minute voice note from the car → a task list, a draft email, a meeting card.
+- A 4,000-line price list reconciled in minutes instead of a day.
+
+The rest — for business owners, specialists, executives and everyday life: **[Use cases](docs/use-cases.md)**.
 
 ## Features
 
@@ -111,7 +121,7 @@ Full reference, including `/usage` breakdowns by model and by source: [docs/cli.
 
 ## Documentation
 
-[Install](docs/install.md) · [Configuration](docs/configuration.md) · [Memory](docs/memory.md) · [Providers](docs/providers.md) · [Security](docs/security.md) · [Deploy](docs/deploy.md) · [CLI](docs/cli.md) · [Extending](docs/extending.md) · [FAQ](docs/faq.md) · [Troubleshooting](docs/troubleshooting.md)
+[Use cases](docs/use-cases.md) · [Install](docs/install.md) · [Configuration](docs/configuration.md) · [Memory](docs/memory.md) · [Providers](docs/providers.md) · [Security](docs/security.md) · [Deploy](docs/deploy.md) · [CLI](docs/cli.md) · [Extending](docs/extending.md) · [FAQ](docs/faq.md) · [Troubleshooting](docs/troubleshooting.md)
 
 Документация на русском → [docs/ru/](docs/ru/)
 

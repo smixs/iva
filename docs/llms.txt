@@ -10,6 +10,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ## Docs
 
+- [Use cases](https://smixs.github.io/iva/use-cases.md): Who runs Iva and for what — scenarios for business owners, specialists, executives and everyday life
 - [Install](https://smixs.github.io/iva/install.md): One command on a fresh Ubuntu VPS — requirements, what install.sh does, flags, and the bot's first message
 - [Configuration](https://smixs.github.io/iva/configuration.md): Every .env variable and the setup wizard (`iva config`)
 - [Memory](https://smixs.github.io/iva/memory.md): The layered vault — daily transcripts, nightly rollups, typed cards, CORE.md, BM25 + graph search

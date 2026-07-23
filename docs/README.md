@@ -1,6 +1,7 @@
 # Iva documentation
 Iva is a self-hosted Telegram AI assistant with layered memory that turns your messages into an Obsidian-compatible vault.
 
+- [use-cases.md](use-cases.md) — who runs Iva and for what: scenarios for business, work and everyday life
 - [install.md](install.md) — one command on a fresh VPS, from curl to the bot's first message
 - [configuration.md](configuration.md) — every `.env` variable and the setup wizard
 - [memory.md](memory.md) — how the vault compounds: transcripts, rollups, cards, search
