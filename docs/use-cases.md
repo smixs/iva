@@ -4,7 +4,7 @@ Iva is a personal agent that lives on your own server and works in your Telegram
 
 ## The highlight reel
 
-- One message in the morning — and back comes the day's plan: tasks, inbox, industry news.
+- Every morning at 9:00 the digest arrives on its own: today's tasks, inbox, industry news.
 - "What did we agree with client X about the last shipment?" — found in seconds, months later.
 - A five-minute voice note from the car → a task list, a draft email, a meeting card.
 - A 4,000-line price list reconciled in minutes instead of a day.
@@ -25,7 +25,7 @@ Iva is a personal agent that lives on your own server and works in your Telegram
 
 **📊 Data at volume.** Price lists, sales reports, reconciliations — she processes them right on your server. What takes a day by hand takes her minutes.
 
-**📰 Industry digests.** What's new with your suppliers, competitors and market — collected on request, with topics and sources tuned to you.
+**📰 Industry digests.** What's new with your suppliers, competitors and market — collected on request, with topics and sources tuned to you. Want it regularly — Iva sets up a cron and the summary arrives every morning by itself.
 
 **🔎 Background checks.** Before a deal, Iva gathers what open sources say about the company and the people across the table.
 
@@ -61,7 +61,7 @@ Iva is a personal agent that lives on your own server and works in your Telegram
 
 ## For everyday life
 
-Voice notes and shopping lists. People and dates she actually remembers. Search and purchases researched with sources. Bedtime stories that continue tonight's plot tomorrow. The interface speaks Russian or English, switched with one button in `/menu`; voice notes are understood in Russian, English and Uzbek.
+Voice notes and shopping lists. People and dates she actually remembers. Search and purchases researched with sources. Reminders and schedules: say "remind me on Friday to congratulate Sergey" or "send my day plan every morning at 9" — Iva sets up a cron on her server and the message arrives right on time. Bedtime stories that continue tonight's plot tomorrow. The interface speaks Russian or English, switched with one button in `/menu`; voice notes are understood in Russian, English and Uzbek.
 
 ## Iva grows around you
 
@@ -75,7 +75,7 @@ The author's own install has grown past 80 skills: Iva runs a Telegram channel, 
 
 ## Honest limits
 
-Iva won't ping you first at 3 p.m. — the only scheduled things are the nightly memory rollups and a quiet daily update check; the morning digest arrives when you ask (`/digest`). The model and voice transcription are cloud APIs you choose and pay for directly, with no markup. The userbot mode (acting from your personal account) is a beta, at your own risk.
+Everything that arrives on its own runs on a schedule: digests and reminders are crons and timers on your server, which Iva sets up when you ask. Without a schedule and without a message from you she won't text first — spontaneous initiative is not a thing she has. The model and voice transcription are cloud APIs you choose and pay for directly, with no markup. The userbot mode (acting from your personal account) is a beta, at your own risk.
 
 ## Try it
 
