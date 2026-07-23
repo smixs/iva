@@ -21,6 +21,9 @@ import { getAccessToken, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 import { compactNumber, modelSummary } from "./lib/model-summary.mjs";
 import { acquireUpdateLock, releaseUpdateLock } from "./lib/update-safety.mjs";
 import { inspectUpstream, markVersionNotified, updateOffer } from "./lib/update-check.mjs";
+// ESC-остановка: канал пишет в data/run-status.json, идёт ли сейчас ход по чату;
+// мост по нему буферизует входящие (см. очередь ниже) и обслуживает /stop.
+import { isRunning } from "./lib/run-status.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const WORKFLOW_DIR = join(ROOT, ".workflow-data");
@@ -55,6 +58,7 @@ const HELP = LANG === "ru"
   ? [
       "Команды Iva:",
       "/help — этот список",
+      "/stop — прервать текущий ход (как кнопка ⏹ Стоп)",
       "/restart — перезапустить зависшего агента",
       "/update — проверить и установить обновление",
       "/new — начать диалог заново",
@@ -68,6 +72,7 @@ const HELP = LANG === "ru"
   : [
       "Iva commands:",
       "/help — this list",
+      "/stop — interrupt the current turn (same as the ⏹ Stop button)",
       "/restart — restart the agent if it's stuck",
       "/update — check for a new version and install it",
       "/new — start over (reset the current conversation)",
@@ -193,7 +198,55 @@ async function restartAgent() {
   } catch (e) {
     log("reset: failed to clear .workflow-data:", e.message);
   }
+  // Reset wipes the ESC-stop state too: a stale "running" flag would keep buffering
+  // messages, and a stale queue would replay pre-reset messages into the fresh dialog.
+  await rm(join(DATA_DIR, "run-status.json"), { force: true }).catch(() => {});
+  await rm(join(DATA_DIR, "telegram-queue.json"), { force: true }).catch(() => {});
   return sc("start", "iva.service");
+}
+
+// ── ESC-stop message queue (Claude Code semantics) ─────────────────────────
+// While a turn is running for a chat, ordinary message updates are NOT delivered to eve:
+// they are appended to data/telegram-queue.json and acknowledged with a 👀 reaction.
+// eve would otherwise buffer them in-memory and auto-process the batch as soon as the
+// turn parks (its docs call that drain best-effort) — we want the stricter semantics:
+// queued messages enter the context only WITH the next fresh message. When the agent is
+// idle again, the next message carries the queue along as update.message.iva_buffered
+// (the channel turns it into context lines).
+const QUEUE_FILE = join(DATA_DIR, "telegram-queue.json");
+
+async function loadQueue() {
+  try {
+    const q = JSON.parse(await readFile(QUEUE_FILE, "utf8"));
+    return typeof q === "object" && q !== null ? q : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveQueue(q) {
+  try {
+    await mkdir(DATA_DIR, { recursive: true });
+    await writeFile(QUEUE_FILE, JSON.stringify(q), "utf8");
+  } catch (e) {
+    log("queue save failed:", e.message);
+  }
+}
+
+// One queued message → one context line. Media can't be re-fed later (the channel
+// processes files only on live delivery), so it degrades to a placeholder + caption.
+const MEDIA_KEYS = [
+  "photo", "voice", "audio", "video", "video_note",
+  "animation", "sticker", "document", "location", "contact", "poll",
+];
+function bufferEntryOf(msg) {
+  const text = (msg.text || "").trim();
+  if (text) return text;
+  const kind = MEDIA_KEYS.find((k) => msg[k] !== undefined);
+  const caption = (msg.caption || "").trim();
+  if (!kind) return caption || null;
+  const note = `[${kind} — прислано пока шёл ход; вложение не обработано, попроси прислать заново, если оно нужно]`;
+  return caption ? `${note} Подпись: ${caption}` : note;
 }
 
 // ── self-update (/update) ──────────────────────────────────────────────────
@@ -623,12 +676,33 @@ async function handleControl(update) {
   }
   if (!text.startsWith("/")) return false;
   const cmd = text.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
-  if (!["/help", "/usage", "/restart", "/new", "/clear", "/compact", "/update", "/model", "/think"].includes(cmd)) return false;
+  if (!["/help", "/stop", "/usage", "/restart", "/new", "/clear", "/compact", "/update", "/model", "/think"].includes(cmd)) return false;
   const from = String(msg?.from?.id ?? "");
   if (ALLOWED.size === 0 || !ALLOWED.has(from)) return false; // untrusted — let eve drop it
   const chatId = msg?.chat?.id;
   if (cmd === "/help") {
     await reply(chatId, HELP);
+    return true;
+  }
+  // /stop — interrupt the current turn. Same path as the ⏹ Stop button: we synthesize a
+  // callback_query with data "iva_cancel"; the channel resolves sessionId from run-status
+  // and resumes eve's cancel hook. Out-of-band so it reaches a busy agent (an ordinary
+  // message would be queued by the gate below and never processed).
+  if (cmd === "/stop") {
+    const key = chatKey(update);
+    if (!key || !isRunning(key)) {
+      await reply(chatId, t("Nothing is running right now.", "Сейчас ничего не выполняется."));
+      return true;
+    }
+    await deliver({
+      update_id: 0,
+      callback_query: {
+        id: `ivastop-${Date.now()}`, // synthetic: answerCallbackQuery on it fails, channel tolerates
+        from: msg.from,
+        message: msg, // carries chat/thread — the channel derives chatKey from here
+        data: "iva_cancel",
+      },
+    });
     return true;
   }
   // /usage — token spend from data/usage.jsonl. Out-of-band and FREE (we don't call the model).
@@ -724,6 +798,37 @@ async function main() {
         continue;
       }
       const key = chatKey(update);
+      // ESC-stop queue gate (messages only): while a turn is running for this chat, buffer
+      // the message instead of delivering. callback_query always passes (eve HITL buttons
+      // and ⏹ Стоп must reach a busy agent). Replies to bot messages also pass — that's
+      // how HITL ForceReply answers arrive; queueing one would deadlock the waiting turn.
+      if (update.message && key !== null && update.message.reply_to_message?.from?.is_bot !== true) {
+        if (isRunning(key)) {
+          const entry = bufferEntryOf(update.message);
+          if (entry !== null) {
+            const q = await loadQueue();
+            (q[key] ??= []).push(entry);
+            await saveQueue(q);
+            // Silent ack: a 👀 reaction on the user's message (no extra chat message).
+            await tg("setMessageReaction", {
+              chat_id: update.message.chat.id,
+              message_id: update.message.message_id,
+              reaction: [{ type: "emoji", emoji: "👀" }],
+            }).catch((e) => log("reaction failed:", e.message));
+          }
+          offset = update.update_id + 1;
+          await saveOffset(offset);
+          continue;
+        }
+        // Idle again: the next fresh message carries the queued ones along.
+        const q = await loadQueue();
+        const pending = q[key];
+        if (Array.isArray(pending) && pending.length) {
+          update.message.iva_buffered = pending;
+          delete q[key];
+          await saveQueue(q);
+        }
+      }
       // Don't deliver the next update of the same chat until eve has parked the previous turn
       // (pause measured from the last delivery to this chat) — otherwise a burst → HookConflict.
       if (key !== null && SETTLE_MS > 0) {
