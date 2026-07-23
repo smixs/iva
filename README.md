@@ -44,7 +44,7 @@ Full history — [CHANGELOG.md](CHANGELOG.md).
 
 - "What did we agree with client X about the last shipment?" — found in seconds, months later.
 - A five-minute voice note from the car → a task list, a draft email, a meeting card.
-- A 4,000-line price list reconciled in minutes instead of a day.
+- "Make a quote from this price list, cut the discount by 2.5%, send it to the client" — a finished Google Doc, link in the chat.
 
 The rest — for business owners, specialists, executives and everyday life: **[Use cases](docs/use-cases.md)**.
 
