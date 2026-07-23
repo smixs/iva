@@ -26,7 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ## What's New 🔥
 
-- **[23.07.2026] main** ⏹️ Control mid-turn: `/stop` interrupts a running turn right from chat, messages sent while Iva is busy queue up instead of vanishing, and the working-status message got an animated loader
+- **[23.07.2026] v0.3.0** 🎛 A control center in chat: nested `/menu` covers model & thinking, web search with in-chat key setup, interface language (instant ru/en switch — the whole interface is now bilingual), userbot and Google onboarding, crons, skills and a live status card. Plus a 🎭 **character test**: 10 button-driven questions, four axes, 16 archetypes — the portrait you accept becomes Iva's live persona from the next message, and a core-memory interview she distills into `CORE.md` herself
+- **[23.07.2026] v0.3.0** ⏹️ Control mid-turn: `/stop` (or the ⏹ button on the status message) interrupts a running turn right from chat, messages sent while Iva is busy queue up instead of vanishing, and the working-status message got an animated loader
 - **[22.07.2026] v0.2.6** ⬆️ Civilized updates: a quiet daily release check that spends zero model tokens, **Update / Later** buttons in Telegram, all progress in one animated message, phased update with rollback that preserves your edits — and legacy installs moved to a working update channel. Replies to `/restart` and `/update` now show the current model, and emotional venting no longer lands in your identity facts
 - **[22.07.2026] v0.2.6** 🧪 **Personal Telegram userbot (beta)** — read and send from your *own* account, not just the bot; onboarding fully in chat (QR, no terminal), with a server-enforced anti-ban guardrail (FloodWait compliance, randomized pacing, circuit-breaker). Opt-in, at your own risk
 - **[15.07.2026] v0.2.5** 🧾 Rich replies: tables, checklists, collapsible blocks and formulas render natively in Telegram (Bot API 10.1), with a graceful fallback for plain text

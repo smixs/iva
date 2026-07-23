@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.3.0] - 2026-07-23
+
+Feature: a control center in chat — `/menu` configures everything, a button-driven test gives Iva a character, and the whole interface speaks two languages.
+
+- 🎛 **`/menu` — every setting in one place** — a nested inline menu covers what used to need SSH and `.env` editing: model & thinking effort (the existing wizards, embedded), the web-search provider with in-chat API-key intake and "where to get a key" links, interface language, Iva's character, her core memory, the personal userbot, Google Workspace, cron timers, the full skill list and a live status card (model, search, language, today's token spend). It runs out-of-band in the poll bridge — works even while Iva is busy, costs zero model tokens — and registers Telegram's blue command menu on start.
+- 🎭 **Character test** — 10 statements about the Iva *you* want (yes / rather yes / rather no / no), scored deterministically over four axes — tone, expression, initiative, thinking style — into one of 16 named archetypes, from Big Sister to Strategist. Accept the portrait and it lands in `vault/PERSONA.md`, injected into the system prompt every turn: the character applies from the very next message, no rebuild, no restart. Retake anytime.
+- 💾 **Core-memory interview** — six free-form questions about you; raw answers are archived to the vault and handed to Iva to distill into `CORE.md` herself, so the always-on memory core stays small and honest.
+- 🌐 **Two languages everywhere** — every service string in the bridge and the channel now exists in English and Russian, and the language switches instantly from the menu: the setting lives in `data/settings.json`, read at runtime by both processes and by the model's language instruction. No restart, no rebuild.
+- ⏹️ **Stop a running turn** — the working-status message carries a ⏹ Stop button (and `/stop` works as a command): the turn aborts mid-generation, finished steps stay in history. Messages sent while Iva is busy queue up with a 👀 reaction and are processed together with your next message instead of vanishing or firing mid-turn. The status message got an animated loader.
+- 🔑 **Secrets stay secret** — API keys, userbot credentials and the Google client JSON are accepted only in private chats; the message with the secret is deleted first, and the value never reaches the model, the logs or an error text.
+
+[0.3.0]: https://github.com/smixs/iva/releases/tag/v0.3.0
+
+## [0.2.6] - 2026-07-22
+
+Feature: civilized updates and a personal-account userbot (beta).
+
+- ⬆️ **Quiet daily update check** — once a day Iva checks for a newer stable release without spending model tokens; if one exists, Telegram offers **Update / Later** once, all progress lands in one animated message, and the phased update preserves your local edits with rollback on failure. Legacy installs were moved to a working update channel; `/restart` and `/update` replies now show the current model, and emotional venting no longer lands in your identity facts.
+- 🧪 **Personal Telegram userbot (beta)** — read and send from your *own* account, not just the bot; onboarding fully in chat (QR, no terminal) with a server-enforced anti-ban guardrail (FloodWait compliance, randomized pacing, circuit-breaker). Opt-in, at your own risk.
+
+[0.2.6]: https://github.com/smixs/iva/releases/tag/v0.2.6
+
+## [0.2.5] - 2026-07-15
+
+Feature: Telegram rich messages.
+
+- 🧾 **Tables, checklists, spoilers and math render natively** — replies containing these constructs go out via Bot API 10.1 `sendRichMessage`; everything else keeps the proven HTML path, and any rejection falls back gracefully, so the worst case equals prior behavior.
+
+[0.2.5]: https://github.com/smixs/iva/releases/tag/v0.2.5
+
 ## [0.2.4] - 2026-07-09
 
 Feature: Iva now works with Google Workspace out of the box, and picking a model on OpenRouter tells you what actually went wrong.
