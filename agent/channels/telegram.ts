@@ -238,6 +238,41 @@ const RAW_MEDIA: ReadonlyArray<{ key: string; tag: string; transcribe: boolean }
 const STOP_CALLBACK = "iva_cancel";
 const STOPPED_TEXT = "⏹ Остановлено. Новые сообщения накоплю и обработаю вместе со следующим.";
 
+// Анимированный лоадер статуса — тот же набор, что у /update
+// (t.me/addemoji/LoadingStatusByTimDesign), но синий круг вместо зелёного квадрата,
+// чтобы «Работаю…» визуально отличался от обновления. Без Premium у владельца бота
+// Telegram вернёт 400 на custom_emoji — тогда навсегда падаем на обычные ⏳.
+const WORK_LOADER = { alt: "🔵", customEmojiId: "5258372840389888502", fallback: "⏳" };
+let workLoaderSupported = true;
+
+async function sendWorkingStatus(tg: {
+  chatId: string;
+  messageThreadId?: number;
+  request: (m: string, b?: any) => Promise<any>;
+}): Promise<number | null> {
+  const base = {
+    chat_id: tg.chatId,
+    reply_markup: { inline_keyboard: [[{ text: "⏹ Стоп", callback_data: STOP_CALLBACK }]] },
+    ...(tg.messageThreadId !== undefined ? { message_thread_id: tg.messageThreadId } : {}),
+  };
+  if (workLoaderSupported) {
+    const res = await tg.request("sendMessage", {
+      ...base,
+      text: `${WORK_LOADER.alt} Работаю…`,
+      entities: [{
+        type: "custom_emoji",
+        offset: 0,
+        length: WORK_LOADER.alt.length,
+        custom_emoji_id: WORK_LOADER.customEmojiId,
+      }],
+    });
+    if (res.ok) return (res.body as any)?.result?.message_id ?? null;
+    workLoaderSupported = false;
+  }
+  const res = await tg.request("sendMessage", { ...base, text: `${WORK_LOADER.fallback} Работаю…` });
+  return res.ok ? ((res.body as any)?.result?.message_id ?? null) : null;
+}
+
 // resumeHook — ВНУТРЕННИЙ модуль eve: публичного cancel-API в 0.24.4 нет (CHANGELOG:
 // «The HTTP cancellation API ships in a following release»). resumeHook("<sessionId>:cancel")
 // абортит активный ход — сигнал прошит до model.stream и тулзов.
@@ -330,13 +365,7 @@ export default telegramChannel({
       const tg = channel.telegram;
       let statusMessageId: number | null = null;
       try {
-        const res = await tg.request("sendMessage", {
-          chat_id: tg.chatId,
-          text: "⏳ Работаю…",
-          reply_markup: { inline_keyboard: [[{ text: "⏹ Стоп", callback_data: STOP_CALLBACK }]] },
-          ...(tg.messageThreadId !== undefined ? { message_thread_id: tg.messageThreadId } : {}),
-        });
-        statusMessageId = (res.body as any)?.result?.message_id ?? null;
+        statusMessageId = await sendWorkingStatus(tg);
       } catch (e) {
         console.error("[telegram] статус-сообщение не отправилось:", e);
       }
