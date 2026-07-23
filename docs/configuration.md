@@ -10,6 +10,8 @@ iva restart
 
 No rebuild. Swapping a model, key or provider is edit → restart.
 
+**One exception: the reply language.** The **🌐 Language** button in `/menu` writes `data/settings.json`, which both processes re-read live — the switch takes effect immediately, no restart. See [menu.md](./menu.md).
+
 ## Model provider
 
 Four providers. Pick one with `MODEL_PROVIDER` and fill only that block. `ollama`/`opencode`/`openrouter` are OpenAI-compatible API keys; `codex` rides your OpenAI (ChatGPT) subscription via OAuth — no key. Prices and full model lists: [providers.md](./providers.md).
@@ -80,7 +82,7 @@ The nightly doctor builds the hybrid index; to build it now, run `node --env-fil
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AGENT_LANGUAGE` | `ru` | `en` or `ru`. Sets Iva's reply language, date locale, and which CORE.md seed `init-vault` uses. |
+| `AGENT_LANGUAGE` | `ru` | `en` or `ru`. Sets Iva's reply language, date locale, and which CORE.md seed `init-vault` uses. The **🌐 Language** button in `/menu` overrides it at runtime via `data/settings.json` (read fresh every turn) and mirrors the choice back here, so the switch is instant — no restart ([menu.md](./menu.md)). |
 | `ASSISTANT_TIMEZONE` | `Asia/Almaty` | IANA name. Sets daily-transcript dates, the 5 nightly memory timers, and the date/time Iva sees each turn. Exported as `TZ`. |
 | `ASSISTANT_VAULT_DIR` | `vault` | The live memory: a separate private git repo, opens in Obsidian. |
 | `ASSISTANT_DATA_DIR` | `data` | Runtime data: `tasks.json`, token log `usage.jsonl`. |

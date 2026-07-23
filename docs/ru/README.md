@@ -13,6 +13,7 @@ Iva - self-hosted ассистент в Telegram со слоями памяти:
 - [providers.md](../providers.md) - все внешние сервисы, с реальными ценами
 - [deploy.md](../deploy.md) - systemd-сервисы и таймеры, long polling, обновления, бэкапы
 - [cli.md](../cli.md) - слэш-команды в Telegram и CLI `iva`
+- [menu.md](../menu.md) - центр настроек `/menu`: карта экранов, что применяется сразу, а что после рестарта, приём ключей, тест характера, интервью памяти
 - [extending.md](../extending.md) - скиллы, MCP-подключения, свои инструменты
 - [troubleshooting.md](../troubleshooting.md) - бот молчит, таймеры падают, провайдер ошибается
 

@@ -102,7 +102,9 @@ Inbound content passes a prompt-injection sanitizer, every reply passes a secret
 
 | In Telegram | On the server |
 |---|---|
-| `/help` · `/task` · `/digest` · `/new` · `/update` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
+| `/menu` · `/help` · `/task` · `/digest` · `/new` · `/update` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
+
+`/menu` opens a one-message settings hub — model, web search, language, a character test and a memory interview — that stays responsive even while Iva is busy and costs no model tokens: [docs/menu.md](docs/menu.md).
 
 Full reference, including `/usage` breakdowns by model and by source: [docs/cli.md](docs/cli.md).
 

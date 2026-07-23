@@ -101,7 +101,9 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 | В Telegram | На сервере |
 |---|---|
-| `/help` · `/task` · `/digest` · `/new` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
+| `/menu` · `/help` · `/task` · `/digest` · `/new` · `/usage` | `iva status` · `iva update` · `iva doctor` · `iva logs` |
+
+`/menu` открывает центр настроек одним сообщением — модель, веб-поиск, язык, тест характера и интервью памяти — который остаётся отзывчивым даже пока Iva занята и не тратит токенов модели: [docs/menu.md](docs/menu.md).
 
 Полный справочник, включая разбивку `/usage` по моделям и источникам: [docs/cli.md](docs/cli.md).
 

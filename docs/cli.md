@@ -6,6 +6,7 @@ Iva has two control surfaces: slash commands in Telegram and the `iva` command o
 
 | Command | What it does |
 |---|---|
+| `/menu` | The settings hub — model, search, language, character, memory, userbot, Google and more in one message ([menu.md](menu.md)) |
 | `/help` | This list |
 | `/stop` | Interrupt the current turn — same as tapping the **⏹ Стоп** button |
 | `/task <text>` | Add a task; without text, Iva asks what to add |
@@ -19,7 +20,7 @@ Iva has two control surfaces: slash commands in Telegram and the `iva` command o
 
 Two kinds here. `/task`, `/tasks` and `/digest` route into the agent and need it running.
 
-Every turn starts with a status message carrying a **⏹ Стоп** button — tap it (or send `/stop`) to abort the turn mid-flight, Claude-Code style: completed work stays in the conversation history, the unfinished step is dropped. Messages sent while a turn is running are not processed immediately: the bridge queues them (you get a 👀 reaction), and they join the context of the next turn — triggered by your next message. `/help`, `/usage`, `/restart`, `/new`, `/clear`, the legacy `/compact` alias and `/update` never reach the agent — the long-poll bridge handles them itself, out-of-band. Reset commands leave one status message, stop `iva.service`, wipe `.workflow-data` (where eve re-enqueues stuck runs on every startup), and start fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
+Every turn starts with a status message carrying a **⏹ Стоп** button — tap it (or send `/stop`) to abort the turn mid-flight, Claude-Code style: completed work stays in the conversation history, the unfinished step is dropped. Messages sent while a turn is running are not processed immediately: the bridge queues them (you get a 👀 reaction), and they join the context of the next turn — triggered by your next message. `/menu`, `/help`, `/usage`, `/restart`, `/new`, `/clear`, the legacy `/compact` alias and `/update` never reach the agent — the long-poll bridge handles them itself, out-of-band. `/menu` in particular is a whole settings surface that stays responsive even while a turn is running — its map and what applies instantly versus on restart live in [menu.md](menu.md). Reset commands leave one status message, stop `iva.service`, wipe `.workflow-data` (where eve re-enqueues stuck runs on every startup), and start fresh. So recovery works at the exact moment you need it: when the agent is wedged mid-turn. The bridge only obeys user IDs on the allowlist.
 
 `/update` compares your install with the upstream repo. If a newer version exists, the same message gets **⬆️ Update** and **Later** buttons. After confirmation, that one message is edited through preservation, fetch, build and the final result — no phase messages are left behind. The active phase uses a small animated Telegram loader when the bot can send custom emoji and falls back to a simple `◇` otherwise. Build logs, diffs and commit IDs stay on the server. The detached updater survives the bridge restart. Nothing happens until you tap.
 

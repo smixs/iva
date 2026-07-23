@@ -17,6 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 - [Providers & cost](https://smixs.github.io/iva/providers.md): Every external service Iva talks to, with real prices — models, transcription, vision, search
 - [Deploy](https://smixs.github.io/iva/deploy.md): The two systemd services and five timers, long polling, updates, backups
 - [Command reference](https://smixs.github.io/iva/cli.md): Telegram slash commands and the `iva` CLI
+- [Settings menu](https://smixs.github.io/iva/menu.md): The `/menu` hub — screen map, what applies instantly vs on restart, key intake, character test, memory interview
 - [Extending](https://smixs.github.io/iva/extending.md): Add skills, MCP connections, and custom tools
 - [FAQ](https://smixs.github.io/iva/faq.md): Short answers on cost, models, privacy, and Obsidian
 - [Troubleshooting](https://smixs.github.io/iva/troubleshooting.md): Diagnosing a silent bot, failed timers, and provider errors
