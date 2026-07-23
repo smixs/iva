@@ -1,6 +1,6 @@
 # Use cases
 
-Iva is not a bot with buttons — it's a personal agent that lives in your Telegram 24/7 and takes the routine off your hands. The README lists features; this page shows what people actually do with them: business owners, specialists, executives and regular humans.
+Iva is a personal agent that lives on your own server and works in your Telegram 24/7. Text, voice, months of memory, browser errands, document editing — an ideal assistant right inside Telegram, no extra apps or services. The README lists features; this page shows what people actually do with them: business owners, specialists, executives and regular humans.
 
 ## The highlight reel
 
@@ -8,6 +8,8 @@ Iva is not a bot with buttons — it's a personal agent that lives in your Teleg
 - "What did we agree with client X about the last shipment?" — found in seconds, months later.
 - A five-minute voice note from the car → a task list, a draft email, a meeting card.
 - A 4,000-line price list reconciled in minutes instead of a day.
+- "Make a quote from this price list, cut the discount by 2.5%, send it to the client" — a finished Google Doc, link right in the chat.
+- "What did I miss in Telegram yesterday?" — a digest of your chats and work groups (userbot mode, beta).
 - Tired of paying for Perplexity — research with links to sources, done by Iva.
 - A photo of a business card → a contact card with what you agreed on.
 - A Gmail reply and a calendar invite sent without opening the laptop.
@@ -17,7 +19,9 @@ Iva is not a bot with buttons — it's a personal agent that lives in your Teleg
 
 **🧠 Memory and context.** Iva remembers what was discussed, when and with whom. Ask "what did we decide with client X about the last shipment?" — she finds the thread, pulls up the agreements and reminds you what's due.
 
-**📎 Files and documents.** Clients send price lists, specs and invoices; Iva takes them apart and files them by project and deal in your vault. Everything findable, nothing lost in chat scroll.
+**📎 Files and documents.** Clients send price lists, specs and invoices — Iva edits them, makes copies, builds tables, reconciles the numbers, fills in forms. Say "make a quote from this price list, discount 2.5% lower, send it to the client" — she creates a Google Doc and drops the link right in the chat.
+
+**📬 What did I miss.** In userbot mode (beta) Iva reads your own Telegram account: ask "what did I miss yesterday?" and she walks through your chats and work groups — what happened, what needs your attention.
 
 **📊 Data at volume.** Price lists, sales reports, reconciliations — she processes them right on your server. What takes a day by hand takes her minutes.
 
@@ -25,19 +29,19 @@ Iva is not a bot with buttons — it's a personal agent that lives in your Teleg
 
 **🔎 Background checks.** Before a deal, Iva gathers what open sources say about the company and the people across the table.
 
-**📮 Mail and calendar.** Gmail, meetings with invites — straight from the chat, via the `gws` CLI she sets up with you.
+**📮 Mail and calendar.** Gmail, meetings with invites — straight from the chat. Ask "what's in the inbox?" and she tells you what actually needs a reply.
 
 ## For specialists
 
-**🔎 Research with receipts.** Not a retelling — an answer with links to sources, on any of four search providers.
+**🔎 Research with receipts.** An answer with links to sources instead of a retelling, on any of four search providers.
 
 **📊 Tables and exports.** Send a ten-thousand-row CSV; she parses it, runs the numbers and returns a summary.
 
 **🎙 Voice and call recordings.** Voice notes, audio and video messages become text, decisions and tasks. Language auto-detected (ru/uz/en).
 
-**✍️ Drafts in your voice.** Emails, documents, replies — she has months of your context to draw from.
+**✍️ Drafts in your voice.** Emails, documents, replies — she has months of your context to draw from, and a draft can arrive as a ready Google Doc with a link.
 
-**🌐 Browser errands.** Fill a form, pull data off a page, take a screenshot — Iva drives a real browser.
+**🌐 Browser errands.** Iva drives a real browser: fills forms on websites, pulls data off pages, takes screenshots — and reads pages behind a login, even your Instagram feed, then tells you what's going on there.
 
 **🗂 A knowledge base you own.** All memory is plain markdown cards in an Obsidian-compatible vault. Open it in Obsidian, grep it, take it with you.
 
