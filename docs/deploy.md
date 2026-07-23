@@ -62,7 +62,7 @@ The update check fetches the configured Git upstream without calling the model. 
 
 Full CLI reference: [cli](./cli.md). What the rollups actually write: [memory](./memory.md).
 
-One thing that trips people up: eve has a `defineSchedule` API, but on self-host it never fires — it only becomes a cron job on Vercel. That is the whole reason memory runs on systemd timers.
+eve's `defineSchedule` API (`agent/schedules/*.ts`) fires on self-host too: a built app served with `eve start` runs Nitro's schedule runner, so cron expressions tick inside the iva.service process (they need `npx eve build` + restart to register, and `eve dev` never fires them). Memory runs on systemd timers anyway — they survive agent restarts and keep history in the journal — but for reminders and recurring digests Iva can use either path: an eve schedule, or a plain crontab/`systemd-run` entry that sends via `scripts/lib/telegram-send.mjs`.
 
 ## nginx and TLS
 
