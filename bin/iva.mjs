@@ -134,6 +134,11 @@ function ivaServiceBody() {
     `Environment=PATH=${NODE_BIN_DIR}:%h/.local/bin:/usr/local/bin:/usr/bin:/bin`,
     "Environment=AGENT_BROWSER_MAX_OUTPUT=24000",
     "Restart=always",
+    // Resource caps: contain a fork bomb / fd exhaustion without OOM-killing the headless
+    // browser. These apply in both user- and system-service mode (unlike the namespace/capability
+    // sandboxing, which a user service can't set up — that lands with the hardened system service).
+    "TasksMax=4096",
+    "LimitNOFILE=8192",
     "",
     "[Install]",
     "WantedBy=default.target",

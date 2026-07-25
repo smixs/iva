@@ -11,6 +11,8 @@ Wants=iva.service
 [Service]
 WorkingDirectory=__PROJECT_DIR__
 EnvironmentFile=__ENV_FILE__
+TasksMax=512
+LimitNOFILE=2048
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=__NODE_BIN__ --env-file=__ENV_FILE__ scripts/telegram-poll.mjs
 # Bootstrap units introduced by an update: the updater that fetched this file may still
