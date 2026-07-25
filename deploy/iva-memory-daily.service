@@ -21,6 +21,6 @@ After=network-online.target iva.service
 [Service]
 Type=oneshot
 WorkingDirectory=__PROJECT_DIR__
-EnvironmentFile=__PROJECT_DIR__/.env
+EnvironmentFile=__ENV_FILE__
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=__NODE_BIN__ --env-file=.env scripts/memory/rollup.ts daily
+ExecStart=__NODE_BIN__ --env-file=__ENV_FILE__ scripts/memory/rollup.ts daily

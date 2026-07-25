@@ -13,7 +13,7 @@ Wants=iva.service
 
 [Service]
 WorkingDirectory=__PROJECT_DIR__/services/telegram-userbot
-EnvironmentFile=__PROJECT_DIR__/.env
+EnvironmentFile=__ENV_FILE__
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 # The SQLite session holds the MTProto auth key — keep everything the proxy writes private.
 UMask=0077

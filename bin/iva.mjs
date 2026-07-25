@@ -23,7 +23,15 @@ import {
 import { syncVaultSkills } from "../scripts/lib/sync-vault-skills.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const ENV_PATH = join(ROOT, ".env");
+// Resolve the env-file location. Hardened installs keep secrets out of the code checkout:
+// IVA_ENV_FILE override → /etc/iva/iva.env if present → in-tree .env (back-compat default).
+const HARDENED_ENV_PATH = "/etc/iva/iva.env";
+function resolveEnvPath() {
+  if (process.env.IVA_ENV_FILE) return process.env.IVA_ENV_FILE;
+  if (existsSync(HARDENED_ENV_PATH)) return HARDENED_ENV_PATH;
+  return join(ROOT, ".env");
+}
+const ENV_PATH = resolveEnvPath();
 const UNIT_DIR = join(homedir(), ".config/systemd/user");
 const NODE = process.execPath;
 const NODE_BIN_DIR = dirname(NODE);
@@ -115,7 +123,7 @@ function ivaServiceBody() {
     "",
     "[Service]",
     `WorkingDirectory=${ROOT}`,
-    `EnvironmentFile=${ROOT}/.env`,
+    `EnvironmentFile=${ENV_PATH}`,
     // Стартуем через `eve start`, а НЕ напрямую `node .output/server/index.mjs`: eve start
     // вызывает prewarmBuiltAppSandboxes() и собирает шаблон песочницы ДО приёма трафика. Сырой
     // index.mjs prewarm не делает → первое же вложение падает SandboxTemplateNotProvisionedError
@@ -145,6 +153,7 @@ function writeUnits() {
     if (!/^iva-.*\.(service|timer)$/.test(f)) continue;
     const tpl = readFileSync(join(deploy, f), "utf8")
       .replaceAll("__PROJECT_DIR__", ROOT)
+      .replaceAll("__ENV_FILE__", ENV_PATH)
       .replaceAll("__NODE_BIN__", NODE)
       .replaceAll("__PYTHON_BIN__", VENV_PY)
       .replaceAll("__TIMEZONE__", timezone);
