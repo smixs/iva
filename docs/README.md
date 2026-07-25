@@ -11,6 +11,7 @@ Iva is a self-hosted Telegram AI assistant with layered memory that turns your m
 - [cli.md](cli.md) — Telegram slash commands and the `iva` CLI
 - [menu.md](menu.md) — the `/menu` settings hub: screen map, what applies instantly vs on restart, key intake, character test, memory interview
 - [extending.md](extending.md) — skills, MCP connections, custom tools
+- [hardening.md](hardening.md) — opt-in: move Iva onto a dedicated no-sudo user with config out of the repo
 - [faq.md](faq.md) — short answers on cost, models, privacy, Obsidian
 - [troubleshooting.md](troubleshooting.md) — a silent bot, failed timers, provider errors
 

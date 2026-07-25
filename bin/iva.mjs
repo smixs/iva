@@ -21,6 +21,7 @@ import {
   releaseUpdateLock,
 } from "../scripts/lib/update-safety.mjs";
 import { syncVaultSkills } from "../scripts/lib/sync-vault-skills.mjs";
+import { migrate as hardenMigrate, detectSchema as detectHardenSchema } from "../scripts/harden-migrate.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // Resolve the env-file location. Hardened installs keep secrets out of the code checkout:
@@ -870,9 +871,45 @@ function cmdUserbot(args) {
   console.log(`токен: ${existsSync(TOKEN_FILE) ? "есть" : "нет — создастся при setup"}`);
 }
 
+// Opt-in hardening: migrate this install onto a dedicated non-login user with config relocated to
+// /etc/iva. Needs root; a bot-triggered / non-interactive run with password sudo is refused and
+// relayed to Telegram (re-run from SSH). Idempotent — a no-op once already on a dedicated user.
+async function cmdHarden() {
+  const env = readEnv();
+  const locale = (env.AGENT_LANGUAGE || process.env.AGENT_LANGUAGE) === "ru" ? "ru" : "en";
+  // Idempotency — an already-hardened install (running as the dedicated user) is a no-op.
+  const currentUser = cap("id", ["-un"]).out.trim() || process.env.USER || "";
+  if (detectHardenSchema({ envPath: ENV_PATH, serviceUser: currentUser }).onDedicatedUser) {
+    ok(locale === "ru" ? "Уже на выделенном пользователе — усиление не требуется" : "Already on a dedicated user — nothing to harden");
+    return;
+  }
+  // Needs root — run from an SSH session. If sudo isn't already passwordless, prime the credential
+  // once in the terminal (cached for the migration's later `sudo -n` calls). No terminal on a
+  // password host → refuse cleanly instead of hanging.
+  console.log(locale === "ru"
+    ? "Усиливаю безопасность (выделенный пользователь + /etc/iva)…"
+    : "Hardening (dedicated user + /etc/iva)…");
+  const passwordless = spawnSync("sudo", ["-n", "true"]).status === 0;
+  if (!passwordless) {
+    if (!process.stdin.isTTY) {
+      bad(locale === "ru" ? "Нужен sudo в терминале — запустите `iva harden` по SSH." : "Needs sudo in a terminal — run `iva harden` over SSH.");
+      return;
+    }
+    console.log(locale === "ru" ? "Введите пароль sudo:" : "Enter your sudo password:");
+    if (spawnSync("sudo", ["-v"], { stdio: "inherit" }).status !== 0) {
+      bad(locale === "ru" ? "sudo не подтверждён." : "sudo not authorized.");
+      return;
+    }
+  }
+  const r = await hardenMigrate({ installDir: ROOT, envPath: ENV_PATH, invokingHome: homedir() });
+  if (r.ok) ok(locale === "ru" ? `Готово — сервис на пользователе ${r.user}` : `Done — service now runs as ${r.user}`);
+  else bad((locale === "ru" ? "Усиление не удалось: " : "Hardening failed: ") + r.error);
+}
+
 const [, , cmd, ...rest] = process.argv;
 const cmds = {
   update: cmdUpdate,
+  harden: cmdHarden,
   userbot: cmdUserbot,
   config: cmdConfig,
   login: cmdLogin,
