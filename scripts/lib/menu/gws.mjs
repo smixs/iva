@@ -11,23 +11,24 @@ import { mkdir, writeFile, chmod } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { startAuth, relayCode, extractCallbackQuery, gwsBin, childEnv } from "./gws-auth.mjs";
 
 const SID = "gws";
 const PARENT = "r";
 const CONFIG_DIR = join(homedir(), ".config/gws");
 const SECRET_PATH = join(CONFIG_DIR, "client_secret.json");
-const LOGIN_CMD = "gws auth login -s gmail,calendar,drive"; // из google-workspace.md:64
 const CACHE_TTL_MS = 60_000;
 let cache = { at: 0, status: null };
 
 const isPrivate = (st) => Number(st.chatId) > 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Проба авторизации. Возвращает "missing" (нет бинаря gws), "unauth" (код 2) или "ok".
 // Неавторизованный gws выходит с кодом 2 сразу (без сети); авторизованный `+triage` может
 // не уложиться в 1.5с — таймаут трактуем как «похоже, подключено» (код != 2).
 function probeAuth() {
   return new Promise((resolve) => {
-    execFile("gws", ["gmail", "+triage"], { timeout: 1500, encoding: "utf8" }, (err) => {
+    execFile(gwsBin(), ["gmail", "+triage"], { timeout: 1500, encoding: "utf8", env: childEnv() }, (err) => {
       if (err && err.code === "ENOENT") return resolve("missing");
       const code = typeof err?.code === "number" ? err.code : err ? 1 : 0;
       resolve(code === 2 ? "unauth" : "ok");
@@ -86,16 +87,16 @@ export default {
         "",
         T("Client secret is in place, but gws isn't authorized yet.", "client_secret.json на месте, но gws ещё не авторизован."),
         "",
-        T("Log in over SSH on the server:", "Войди по SSH на сервере:"),
-        LOGIN_CMD,
-        "",
-        T("gws prints a link — open it in your browser and approve, then tap «Check again».", "gws напечатает ссылку — открой её в браузере и подтверди, затем нажми «Проверить»."),
+        T("Tap «Connect» — I'll give you a Google link and finish the login for you.", "Нажми «Подключить» — дам ссылку на Google и завершу вход за тебя."),
       ].join("\n");
-      return { text, rows: [checkRow, ctx.backRow(PARENT)] };
+      return {
+        text,
+        rows: [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], checkRow, ctx.backRow(PARENT)],
+      };
     }
     // ok
     return {
-      text: `${head}\n\n${T("✅ Connected. Scopes: gmail, calendar, drive.", "✅ Подключено. Права: gmail, calendar, drive.")}`,
+      text: `${head}\n\n${T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive.")}`,
       rows: [checkRow, ctx.backRow(PARENT)],
     };
   },
@@ -124,8 +125,40 @@ export default {
       );
     }
 
+    if (step === "connect") {
+      const T = ctx.tr;
+      const challenge = await startAuth();
+      if (!challenge) {
+        st.awaitText = null;
+        return ctx.flows.screen(
+          st,
+          T("Couldn't start gws auth — is the client secret valid? Try again.", "Не удалось запустить gws-авторизацию — проверь client_secret и попробуй снова."),
+          [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], ctx.backRow(PARENT)],
+        );
+      }
+      st.gwsAuth = { port: challenge.port };
+      // secret:true — движок удалит сообщение с одноразовым code из чата после приёма.
+      st.awaitText = { kind: "gwsauthcode", secret: true };
+      const text = [
+        T("🔗 Connecting Google", "🔗 Подключение Google"),
+        "",
+        T("1) Open this link, pick your account and approve access:", "1) Открой ссылку, выбери аккаунт и подтверди доступ:"),
+        challenge.url,
+        "",
+        T(
+          "2) Your browser will jump to a http://localhost:… page that WON'T load — that's expected. Copy the WHOLE URL from the address bar and paste it back here.",
+          "2) Браузер перекинет на страницу http://localhost:… — она НЕ загрузится, это нормально. Скопируй ВЕСЬ URL из адресной строки и пришли сюда.",
+        ),
+      ].join("\n");
+      return ctx.flows.screen(st, text, [[ctx.btn(T("Cancel", "Отмена"), `iva_menu:${SID}:o`)]]);
+    }
+
     if (step === "check") {
       invalidate();
+      // Re-rendering the same status yields an identical message → Telegram "not modified" → the
+      // tap looks like it did nothing. Flash a transient "checking…" first so the re-render always
+      // differs and the result is visibly refreshed.
+      await ctx.flows.screen(st, ctx.tr("⏳ Checking…", "⏳ Проверяю…"), null);
       return ctx.show(st, SID);
     }
     return ctx.show(st, SID);
@@ -173,11 +206,62 @@ export default {
       invalidate();
       return ctx.flows.screen(
         st,
-        ctx.tr(
-          `Saved. Now log in over SSH: ${LOGIN_CMD} — then tap «Check again».`,
-          `Сохранил. Теперь войди по SSH: ${LOGIN_CMD} — затем нажми «Проверить».`,
-        ),
-        [[ctx.btn(ctx.tr("Check again", "Проверить"), `iva_menu:${SID}:do:check`)], ctx.backRow(PARENT)],
+        ctx.tr("Saved. Now tap «Connect» to log in.", "Сохранил. Теперь нажми «Подключить» для входа."),
+        [[ctx.btn(ctx.tr("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], ctx.backRow(PARENT)],
+      );
+    },
+
+    // Приём redirect-URL из браузера после согласия Google. Достаём callback-запрос (в нём code)
+    // и локально проигрываем его на loopback-слушателе gws на сервере → gws завершает обмен и
+    // сохраняет токен. code одноразовый — сам URL/код не логируем и в чат не печатаем.
+    async gwsauthcode(text, msg, st, ctx) {
+      const T = ctx.tr;
+      const auth = st.gwsAuth;
+      const cancelRow = [[ctx.btn(T("Cancel", "Отмена"), `iva_menu:${SID}:o`)]];
+      if (!auth?.port) {
+        st.awaitText = null;
+        return ctx.flows.screen(
+          st,
+          T("That login session expired. Tap «Connect» to start over.", "Сессия входа истекла. Нажми «Подключить», чтобы начать заново."),
+          [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], ctx.backRow(PARENT)],
+        );
+      }
+      const query = extractCallbackQuery(text);
+      if (!query) {
+        return ctx.flows.screen(
+          st,
+          T("Couldn't find an authorization code. Paste the whole redirect URL from the address bar, or cancel.", "Не нашёл код авторизации. Пришли ВЕСЬ redirect-URL из адресной строки или отмени."),
+          cancelRow,
+        );
+      }
+      st.awaitText = null;
+      st.gwsAuth = null;
+      // The pasted message is gone (secret) and relay+probe takes a couple of seconds — a brief
+      // working indicator makes the process feel under control before the final status lands.
+      await ctx.flows.screen(st, T("⏳ Working…", "⏳ Работаю…"), null);
+      const relay = await relayCode(auth.port, query);
+      if (!relay.ok) {
+        return ctx.flows.screen(
+          st,
+          T("Couldn't hand the code to gws (the login window likely timed out). Tap «Connect» to try again.", "Не удалось передать код gws (окно входа, вероятно, истекло по таймауту). Нажми «Подключить» и попробуй снова."),
+          [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], ctx.backRow(PARENT)],
+        );
+      }
+      await sleep(2500); // let gws exchange the code and write the token before we re-probe
+      invalidate();
+      // A final status is mandatory — always edit the menu message to an explicit outcome, so the
+      // user never has to guess whether the login finished. (The op is short; no working spinner.)
+      if ((await authStatus()) === "ok") {
+        return ctx.flows.screen(
+          st,
+          T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive."),
+          [ctx.backRow(PARENT)],
+        );
+      }
+      return ctx.flows.screen(
+        st,
+        T("⚠️ Couldn't confirm the connection. Tap «Connect» to try again.", "⚠️ Не удалось подтвердить подключение. Нажми «Подключить» и попробуй снова."),
+        [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], ctx.backRow(PARENT)],
       );
     },
   },
