@@ -107,7 +107,9 @@ maint("link_cleanup", [`${SCRIPTS}/link_cleanup.py`, "."]);
 // Плагин: пересобрать сайдкар эмбеддингов для hybrid-поиска (только если включён). Запускаем
 // из корня проекта (cwd), а не из VAULT — скрипт лежит в scripts/, ключ читается из .env.
 if (process.env.MEMORY_SEARCH_MODE === "hybrid") {
-  const r = run("node", ["--env-file=.env", "scripts/memory/embed-index.ts"], process.cwd());
+  // Use process.execPath, not bare "node": the systemd unit's PATH does not include the
+  // nvm node dir, so spawning "node" by name fails with ENOENT and falsely reports a failure.
+  const r = run(process.execPath, ["--env-file=.env", "scripts/memory/embed-index.ts"], process.cwd());
   if (r.status !== 0) failures.push("embed-index");
 }
 
