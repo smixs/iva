@@ -11,7 +11,7 @@
 import { readFile, writeFile, mkdir, rm, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/usage.mjs";
@@ -33,7 +33,9 @@ import { createFlows } from "./lib/tg-flow.mjs";
 import { createMenu } from "./lib/menu/index.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const WORKFLOW_DIR = join(ROOT, ".workflow-data");
+// Current eve keeps the workflow store in .eve/.workflow-data; the bare .workflow-data is
+// where older versions kept it — clear both so recovery works across eve upgrades.
+const WORKFLOW_DIRS = [join(ROOT, ".eve", ".workflow-data"), join(ROOT, ".workflow-data")];
 const NODE = process.execPath;
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -189,15 +191,17 @@ const sc = (...args) =>
 
 // Recovery commands (/restart, /new, /clear, /compact) = "reset and bring back up".
 // A plain restart doesn't help: on start eve RE-ENQUEUES all pending/running runs from
-// .workflow-data, so the stuck/bloated turn comes back. We stop the server, clear
-// .workflow-data (while the process is stopped — not from under a live one), bring it back up. It wipes ALL
+// the workflow store, so the stuck/bloated turn comes back. We stop the server, clear
+// the store (while the process is stopped — not from under a live one), bring it back up. It wipes ALL
 // parked conversations — for a single-user assistant this is exactly "start over".
 async function restartAgent() {
   await sc("stop", "iva.service");
-  try {
-    await rm(WORKFLOW_DIR, { recursive: true, force: true });
-  } catch (e) {
-    log("reset: failed to clear .workflow-data:", e.message);
+  for (const dir of WORKFLOW_DIRS) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+    } catch (e) {
+      log(`reset: failed to clear ${relative(ROOT, dir)}:`, e.message);
+    }
   }
   // Reset wipes the ESC-stop state too: a stale "running" flag would keep buffering
   // messages, and a stale queue would replay pre-reset messages into the fresh dialog.
