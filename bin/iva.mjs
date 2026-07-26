@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
@@ -589,23 +589,28 @@ function cmdRestart() {
   restartServices(); // regenerate the unit before restart → PORT stays in sync with IVA_PORT in .env
   ok("Restarted: iva + telegram-poll");
 }
-// Full reset: stop services, wipe .workflow-data, bring it back up. A plain restart
+// Full reset: stop services, wipe the workflow store, bring it back up. A plain restart
 // does NOT cure a stuck/bloated run — on startup eve re-enqueues all pending/running
-// runs from .workflow-data ("Re-enqueued N active run(s) on startup"). We clean while the server
-// is stopped (otherwise we'd delete files out from under a live process). Wipes ALL parked dialogs.
+// runs ("Re-enqueued N active run(s) on startup"). We clean while the server is stopped
+// (otherwise we'd delete files out from under a live process). Wipes ALL parked dialogs.
+// Current eve keeps the store in .eve/.workflow-data; the bare .workflow-data is where
+// older versions kept it — clear both so reset works across eve upgrades.
 function cmdReset() {
   requireSystemd();
   step("Full reset: stopping services…");
   sc("stop", ...SERVICES);
-  const wf = join(ROOT, ".workflow-data");
-  if (existsSync(wf)) {
+  let found = false;
+  for (const wf of [join(ROOT, ".eve", ".workflow-data"), join(ROOT, ".workflow-data")]) {
+    if (!existsSync(wf)) continue;
+    found = true;
     try {
       rmSync(wf, { recursive: true, force: true });
-      ok(".workflow-data cleared — stuck/accumulated workflow runs reset");
+      ok(`${relative(ROOT, wf)} cleared — stuck/accumulated workflow runs reset`);
     } catch (e) {
-      warn(`failed to delete .workflow-data: ${e.message}`);
+      warn(`failed to delete ${relative(ROOT, wf)}: ${e.message}`);
     }
-  } else ok(".workflow-data already empty");
+  }
+  if (!found) ok("workflow store already empty");
   restartServices();
   ok("Restarted: iva + telegram-poll");
 }
