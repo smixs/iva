@@ -2,11 +2,17 @@
 // Static lists are the offline fallback; fetchModels() prefers the provider's live
 // list (same endpoints as scripts/setup.mjs, which cannot be imported — it runs an
 // interactive readline at import). Edit the arrays below to curate what the wizard offers.
-import { listCodexModels } from "./codex-oauth.mjs";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { listCodexModels, listCodexEfforts } from "./codex-oauth.mjs";
 
-// Reasoning-effort levels. Shared with agent/provider.ts (THINKING_EFFORT validation),
-// applied natively on codex only.
-export const EFFORTS = ["minimal", "low", "medium", "high"];
+// Reasoning-effort levels: статический ОФЛАЙН-ФОЛБЭК. Живой список для codex берёт
+// fetchEfforts() ниже; он же кэширует его в EFFORTS_CACHE_FILE, откуда agent/provider.ts
+// читает набор для валидации THINKING_EFFORT — меню и валидация сверяются с одним списком,
+// а не совпадают случайно. "minimal" убран — модели gpt-5.6 его не поддерживают (бэкенд
+// отвечал бы 400), их шкала: low..max (+ ultra, скрыт — см. fetchEfforts).
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export const EFFORTS_CACHE_FILE = "reasoning-efforts.json";
 
 // A hung provider endpoint must not stall the bridge's single getUpdates loop.
 const FETCH_TIMEOUT_MS = 10_000;
@@ -59,6 +65,35 @@ export const CATALOG = {
     ],
   },
 };
+
+// Живой список уровней размышлений для кнопок /model и /think. На codex — из
+// supported_reasoning_levels бэкенда для конкретной модели; "ultra" не показываем:
+// бэкенд описывает его как «reasoning with automatic task delegation» — режим
+// Codex-клиента, поведение через голый /responses не документировано. Любой сбой
+// сети/формата или не-codex провайдер → статический EFFORTS (уровень всё равно
+// применяется только на codex).
+// Удачный живой список кэшируется в <dataDir>/EFFORTS_CACHE_FILE — его читает
+// agent/provider.ts как источник валидации THINKING_EFFORT: меню записало уровень —
+// провайдер его примет, даже если статический список отстал от бэкенда.
+export async function fetchEfforts(provider, model, { dataDir } = {}) {
+  if (provider !== "codex") return EFFORTS;
+  try {
+    const map = await listCodexEfforts(dataDir ? { dataDir } : {});
+    const levels = (map[model] || []).filter((e) => e !== "ultra");
+    if (!levels.length) return EFFORTS;
+    try {
+      writeFileSync(
+        join(dataDir || process.env.ASSISTANT_DATA_DIR || "data", EFFORTS_CACHE_FILE),
+        JSON.stringify(levels) + "\n",
+      );
+    } catch {
+      /* кэш — best-effort: без него провайдер валидирует по статическому EFFORTS */
+    }
+    return levels;
+  } catch {
+    return EFFORTS;
+  }
+}
 
 // Live model list with static fallback. 401/403 → {auth:true} error (stored key is
 // dead — the wizard re-enters the key flow); any other failure (network, format

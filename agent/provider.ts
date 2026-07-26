@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { CODEX_BASE_URL, codexAuthHeaders } from "../scripts/lib/codex-oauth.mjs";
-import { EFFORTS } from "../scripts/lib/model-catalog.mjs";
+import { EFFORTS, EFFORTS_CACHE_FILE } from "../scripts/lib/model-catalog.mjs";
 
 type WrappableModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
@@ -56,10 +58,26 @@ export const providerConfig = PROVIDERS[PROVIDER as keyof typeof PROVIDERS] ?? P
 // THINKING_EFFORT (.env, пишут /model и /think в Telegram): reasoning-усилие модели.
 // Нативно применяется только на codex (providerOptions.openai.reasoningEffort → reasoning.effort
 // в теле /responses, см. codexProviderOptions). Для остальных провайдеров — сохранённый профиль
-// без рантайм-эффекта. Уровни — из общего каталога мастера (model-catalog.mjs), чтобы список
-// кнопок и валидация не разъезжались. Невалидное/пустое значение молча игнорируем («не задан»).
+// без рантайм-эффекта. Валидируем по тому же списку, из которого мастер строил кнопки:
+// живой кэш, который пишет fetchEfforts() (model-catalog.mjs), со статическим EFFORTS как
+// офлайн-фолбэком — новый уровень бэкенда не разъедет меню и валидацию. Оба процесса
+// стартуют из корня репо, поэтому относительный dataDir указывает в одно место.
+// Невалидное/пустое значение молча игнорируем («не задан»).
+function knownEfforts(): string[] {
+  try {
+    const raw = readFileSync(
+      join(process.env.ASSISTANT_DATA_DIR || "data", EFFORTS_CACHE_FILE),
+      "utf8",
+    );
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length && arr.every((x) => typeof x === "string")) return arr;
+  } catch {
+    /* кэша ещё нет (мастер не запускался) или он битый — статический фолбэк */
+  }
+  return EFFORTS;
+}
 const effortRaw = (process.env.THINKING_EFFORT ?? "").toLowerCase();
-export const thinkingEffort = EFFORTS.includes(effortRaw) ? effortRaw : undefined;
+export const thinkingEffort = knownEfforts().includes(effortRaw) ? effortRaw : undefined;
 
 // --- Codex (подписка ChatGPT): Responses API через @ai-sdk/openai ----------------------------
 // Кастомный fetch: перед КАЖДЫМ запросом подставляет свежий Bearer + ChatGPT-Account-ID

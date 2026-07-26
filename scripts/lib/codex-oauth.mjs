@@ -31,6 +31,9 @@ const FALLBACK_PORT = 1457;
 
 const b64url = (buf) => Buffer.from(buf).toString("base64url");
 const defaultDir = () => process.env.ASSISTANT_DATA_DIR || "data";
+// Зависший /models не должен стопорить единственный getUpdates-цикл моста
+// (та же защита, что FETCH_TIMEOUT_MS в model-catalog.mjs).
+const MODELS_FETCH_TIMEOUT_MS = 10_000;
 // Язык подсказок входа (en по умолчанию — как у codex CLI). Мастер/CLI прокидывают lang.
 const tr = (lang, en, ru) => (lang === "ru" ? ru : en);
 
@@ -312,7 +315,10 @@ export async function login(mode = "device", opts = {}) {
 // с сырым телом, чтобы мастер показал реальную форму ответа (а не молча свалился в ручной ввод).
 export async function listCodexModels({ dataDir = defaultDir() } = {}) {
   const headers = await codexAuthHeaders(dataDir);
-  const res = await fetch(`${CODEX_BASE_URL}/models?client_version=${CLIENT_VERSION}`, { headers });
+  const res = await fetch(`${CODEX_BASE_URL}/models?client_version=${CLIENT_VERSION}`, {
+    headers,
+    signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`list models failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
   const json = await res.json();
   const arr = Array.isArray(json) ? json : json.models || json.data || json.model_presets || [];
@@ -322,6 +328,35 @@ export async function listCodexModels({ dataDir = defaultDir() } = {}) {
   const uniq = [...new Set(slugs)];
   if (!uniq.length) throw new Error(`models endpoint returned no usable models — raw: ${JSON.stringify(json).slice(0, 500)}`);
   return uniq.sort(compareModelDesc);
+}
+
+// Живые уровни размышлений по моделям: { slug: ["low","medium",...] }.
+// Тот же эндпоинт, что listCodexModels; supported_reasoning_levels — массив
+// { effort, description } (описания не нужны — берём только effort). Рекурсивный
+// обход устойчив к смене ключа-обёртки, как deepFindModels.
+export async function listCodexEfforts({ dataDir = defaultDir() } = {}) {
+  const headers = await codexAuthHeaders(dataDir);
+  const res = await fetch(`${CODEX_BASE_URL}/models?client_version=${CLIENT_VERSION}`, {
+    headers,
+    signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`list models failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
+  const map = {};
+  (function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node && typeof node === "object") {
+      const slug = node.model || node.slug;
+      const levels = node.supported_reasoning_levels;
+      if (slug && Array.isArray(levels)) {
+        const efforts = levels
+          .map((l) => (typeof l === "string" ? l : l?.effort || l?.level || l?.id))
+          .filter(Boolean);
+        if (efforts.length) map[slug] = efforts;
+      }
+      Object.values(node).forEach(walk);
+    }
+  })(await res.json());
+  return map;
 }
 
 // Рекурсивно собирает slug'и из любого вложенного массива объектов с полем model/slug

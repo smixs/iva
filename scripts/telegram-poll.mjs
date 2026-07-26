@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/usage.mjs";
 import { readEnvFresh, readEnvValues, upsertEnv } from "./lib/env-file.mjs";
-import { CATALOG, EFFORTS, fetchModels, checkKey } from "./lib/model-catalog.mjs";
+import { CATALOG, EFFORTS, fetchModels, fetchEfforts, checkKey } from "./lib/model-catalog.mjs";
 import { getAccessToken, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 import { compactNumber, modelSummary } from "./lib/model-summary.mjs";
 import { acquireUpdateLock, releaseUpdateLock } from "./lib/update-safety.mjs";
@@ -364,9 +364,10 @@ const newWizard = (chatId, userId, flow, extra) => flows.start(chatId, userId, f
 const wizScreen = (st, text, rows) => flows.screen(st, text, rows);
 const endWizard = (st, text, rows) => flows.end(st, text, rows);
 
-const EFFORT_SET = new Set(EFFORTS);
 // effortLabel — функция (tr на месте вызова): язык не замораживается в module-level const.
-const effortLabel = (v) => (v && EFFORT_SET.has(v) ? v : tr("not set", "не задан"));
+// Не сверяем со статическим EFFORTS: уровни теперь живые (fetchEfforts), сохранённое
+// значение показываем как есть — лишь бы выглядело как уровень.
+const effortLabel = (v) => (v && /^[a-z]+$/.test(v) ? v : tr("not set", "не задан"));
 
 async function currentConfig() {
   const env = await readEnvValues(ENV_PATH);
@@ -397,11 +398,19 @@ const refuseSecretInGroup = (st) =>
     "Ключи — это секрет. Открой личный чат со мной и введи ключ там.",
   ), menuRow());
 
-function effortRows(ns, withKeep) {
+function effortRows(ns, withKeep, efforts = EFFORTS) {
   return [
-    EFFORTS.map((e) => btn(e, `${ns}:eff:${e}`)),
+    efforts.map((e) => btn(e, `${ns}:eff:${e}`)),
     [btn(tr("Don't set", "Не задавать"), `${ns}:eff:unset`), withKeep ? btn(tr("Keep", "Оставить"), `${ns}:keep`) : cancelRow()[0]],
   ];
+}
+
+// Живые уровни для выбранной модели (codex: supported_reasoning_levels бэкенда,
+// иначе/при сбое — статический EFFORTS). Список запоминаем в стейте визарда:
+// по нему же валидируется тап eff: — кнопка и допустимость всегда из одного списка.
+async function loadEfforts(st, provider, model) {
+  st.efforts = await fetchEfforts(provider, model, { dataDir: DATA_DIR_ABS });
+  return st.efforts;
 }
 
 // {msgId} (опц.) — хендофф из /menu: визард заменяет flow-слот и рисует в ТО ЖЕ сообщение меню.
@@ -418,10 +427,11 @@ async function handleModelCmd(chatId, from, { msgId } = {}) {
 }
 
 async function handleThinkCmd(chatId, from, { msgId } = {}) {
-  const { effort } = await currentConfig();
+  const { provider, model, effort } = await currentConfig();
   const st = newWizard(chatId, from, "think");
   st.msgId = msgId ?? null;
-  await wizScreen(st, tr(`Thinking level: ${effortLabel(effort)}.`, `Уровень размышлений: ${effortLabel(effort)}.`), effortRows("iva_think", true));
+  const efforts = await loadEfforts(st, provider, model);
+  await wizScreen(st, tr(`Thinking level: ${effortLabel(effort)}.`, `Уровень размышлений: ${effortLabel(effort)}.`), effortRows("iva_think", true, efforts));
 }
 
 async function showProviderScreen(st) {
@@ -562,7 +572,7 @@ async function saveWizard(st) {
 async function showSaved(st) {
   const { provider, model, effort } = await currentConfig();
   let text = tr(`Saved: ${provider} · ${model} · thinking: ${effortLabel(effort)}.`, `Сохранил: ${provider} · ${model} · размышления: ${effortLabel(effort)}.`);
-  if (EFFORT_SET.has(effort) && provider !== "codex") {
+  if (effort && /^[a-z]+$/.test(effort) && provider !== "codex") {
     text += tr(
       "\nThe thinking level is saved in the profile, but natively applies only on codex.",
       "\nУровень размышлений сохранён в профиле, но нативно применяется только на codex.",
@@ -608,12 +618,13 @@ async function handleWizardCallback(cq) {
     const m = st.models?.[Number(action.slice("m:".length))];
     if (!m) return true;
     st.model = m;
-    await wizScreen(st, tr("Thinking level:", "Уровень размышлений:"), effortRows("iva_model", false));
+    const efforts = await loadEfforts(st, st.provider, m);
+    await wizScreen(st, tr("Thinking level:", "Уровень размышлений:"), effortRows("iva_model", false, efforts));
     return true;
   }
   if (action.startsWith("eff:")) {
     const v = action.slice("eff:".length);
-    st.effort = EFFORT_SET.has(v) ? v : null; // "unset" and anything unknown ⇒ drop
+    st.effort = (st.efforts || EFFORTS).includes(v) ? v : null; // "unset" and anything unknown ⇒ drop
     try {
       await saveWizard(st);
     } catch (e) {
