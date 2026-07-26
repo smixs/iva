@@ -21,6 +21,7 @@ import character from "./character.mjs";
 import core from "./core.mjs";
 import userbot from "./userbot.mjs";
 import gws from "./gws.mjs";
+import todoist from "./todoist.mjs";
 import crons from "./crons.mjs";
 import skills from "./skills.mjs";
 import status from "./status.mjs";
@@ -36,6 +37,7 @@ export const SCREENS = {
   core,
   ub: userbot,
   gws,
+  td: todoist,
   cron: crons,
   sk: skills,
   st: status,

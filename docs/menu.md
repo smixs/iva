@@ -1,6 +1,6 @@
 # The settings menu (`/menu`)
 
-`/menu` opens one Telegram message with a nested inline keyboard that gathers **every** Iva setting in one place — model, web search, language, a character test, a memory interview, the personal userbot, Google Workspace, timers, skills and a live status card. It exists because configuring an agent by hand — editing `.env`, running CLI wizards, pasting keys over SSH — is exactly where people get stuck.
+`/menu` opens one Telegram message with a nested inline keyboard that gathers **every** Iva setting in one place — model, web search, language, a character test, a memory interview, the personal userbot, Google Workspace, Todoist, timers, skills and a live status card. It exists because configuring an agent by hand — editing `.env`, running CLI wizards, pasting keys over SSH — is exactly where people get stuck.
 
 The menu lives in the long-poll bridge, not the agent. That has three consequences: it **works while Iva is mid-turn** (out-of-band — nothing is queued behind a running reply), it **costs zero model tokens** (the one exception is the memory interview, which hands your answers to Iva to distill), and deploying a change to it is a bridge restart, not a rebuild. Only user IDs on the allowlist can open it; taps from anyone else are silently dropped. Everything is bilingual (ru/en) and follows the **🌐 Language** button live.
 
@@ -12,8 +12,9 @@ The menu lives in the long-poll bridge, not the agent. That has three consequenc
 [🔍 Search]    [🌐 Language]
 [🎭 Character] [💾 Memory]
 [📡 Userbot]   [🔗 Google]
-[⏰ Timers]    [🧩 Skills]
-[📊 Status]    [🛠 Maintenance]
+[✅ Todoist]   [⏰ Timers]
+[🧩 Skills]    [📊 Status]
+[🛠 Maintenance]
 [✖ Close]
 ```
 
@@ -56,7 +57,7 @@ Your raw answers are archived verbatim to `vault/core-interview.md` (overwritten
 
 ## API keys and secrets
 
-Search keys, the userbot's `api_id`/`api_hash`, and the Google OAuth client JSON are all entered **in the chat**, and the intake is built to keep them out of harm's way:
+Search keys, the userbot's `api_id`/`api_hash`, the Google OAuth client JSON, and the Todoist API token are all entered **in the chat**, and the intake is built to keep them out of harm's way:
 
 - **Private chat only.** Secret intake is refused in groups — bystanders would see the key and the bot may lack the rights to delete it.
 - **Delete first.** The message carrying your key is deleted before anything else happens; if Telegram won't let the bot delete it, you get a warning to remove it yourself.
@@ -82,6 +83,10 @@ The userbot is opt-in beta; the full picture, including the anti-ban guardrail: 
 ## Google Workspace
 
 The **🔗 Google** screen checks for `~/.config/gws/client_secret.json`. Missing, it walks you through console.cloud.google.com — create an OAuth client of type *Desktop app*, download the JSON, paste it into the chat (it's shape-checked and written `0600`). Present, it probes authorization; if you're not signed in yet it shows a **Connect** button that runs the whole sign-in for you — no SSH. `gws auth login` only supports the loopback flow (it waits for the browser to hit `http://localhost:<port>` on the server), which can't complete from a browser on another machine. So Iva starts `gws` itself, sends you the Google consent link, and when you approve and paste the redirect URL back — the one that lands on a `http://localhost:…` page your browser can't load — it replays that callback against the loopback listener locally, finishing the exchange and storing the token. The pasted URL carries a one-time code, so Iva deletes that message and never logs it, then edits the screen to a final status (connected, or retry). What `gws` reaches: Gmail, Calendar, Drive, Sheets, Docs.
+
+## Todoist
+
+The **✅ Todoist** screen connects tasks and reminders. Todoist offers a personal API token (Todoist → Settings → Integrations → Developer), so there's no OAuth dance: the screen probes `todoist auth`, and when you're not connected it walks you to the token and takes it as a chat message the bridge captures out-of-band — deleted on arrival and written `0600` to `~/.config/iva-todoist/token`, so the token never passes through the model during setup and doesn't linger in the chat. Once stored it's an ordinary same-user credential, like the `gws` token or the keys in `.env`: Iva runs with full host access by design ([security.md](security.md)), so the safeguard is the intake path, not a redaction wall around the file. Once connected the screen shows a **Disconnect** button. Todoist then lives in-process like every other tool — the agent calls the `scripts/todoist.mjs` CLI directly over `bash` (the same shape as `gws`), with no separate service or user; Iva runs with full host access by design ([security.md](security.md)). Reads (projects, tasks) happen immediately; before a delete or an ambiguous change the agent asks you first with inline buttons — the built-in `ask_question` flow. What it reaches: your Todoist tasks and projects, with due dates set from natural language (Todoist notifies per your own settings — this isn't a separate reminders feature).
 
 ## Timers, Skills, Status
 
