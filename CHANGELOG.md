@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- 🖼️ **Photo descriptions were dead on both cheap providers** — vision runs on a hardcoded model per provider, and both had been retired out from under it: Ollama Cloud answered `410 gemma3:12b was retired at 2026-07-15`, OpenCode Go answered `401 Model gemini-3-flash is not supported`. Every photo silently landed in the vault with no description. Vision now uses `gemma4:31b` (Ollama) and `qwen3.7-plus` (Go), both re-verified against the live endpoints.
+- 🤖 **Kimi K3 in the model lists** — the new 1M-context Moonshot model is offered by `/model` and `iva config` on all three key-based providers: `kimi-k3` on OpenCode Go and Ollama Cloud, `moonshotai/kimi-k3` on OpenRouter (replacing the older `kimi-k2`). The offline fallback lists were re-synced with the live catalogs while we were there — Go gained `minimax-m3` and `grok-4.5`, and the Ollama list dropped two ids that provider never actually served (`qwen3.7-max`, `gemma3:12b`). Note that on Ollama Cloud `kimi-k3` bills as extra usage on top of the plan: with an empty extra balance it returns `402`.
+
 ## [0.3.4] - 2026-07-28
 
 Fix: memory cards survive updates, recovery targets the right Telegram conversation, thinking controls work across cloud providers, and private routes and files are locked down. Big thanks to the contributors whose reports and patches drove this release: [@AndyShaman](https://github.com/AndyShaman) (#34, #35, #36, #38, #42, #43 - the recovery fixes #35/#42 are merged with his authorship) and [@yakovmakovets](https://github.com/yakovmakovets) (#37, #39).

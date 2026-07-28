@@ -24,7 +24,10 @@ export const CATALOG = {
     keyVar: "OLLAMA_API_KEY",
     modelVar: "OLLAMA_MODEL",
     def: "deepseek-v4-pro",
-    models: ["deepseek-v4-pro", "deepseek-v4-flash", "qwen3.7-max", "gpt-oss:120b", "gemma3:12b"],
+    // Mirrors the live GET /models list (checked 2026-07-28). Ollama Cloud retires tags without
+    // notice — gemma3:12b went 410 on 2026-07-15 — so keep only IDs seen in the live response.
+    // kimi-k3 is billed as "extra usage" on top of the plan (402 with an empty extra balance).
+    models: ["deepseek-v4-pro", "deepseek-v4-flash", "kimi-k3", "glm-5.2", "minimax-m3", "gemma4:31b", "gpt-oss:120b"],
   },
   opencode: {
     label: "OpenCode Go",
@@ -34,7 +37,16 @@ export const CATALOG = {
     modelVar: "OPENCODE_MODEL",
     def: "deepseek-v4-pro",
     // Mirrors OPENCODE_MODELS in setup.mjs (bare IDs, no "opencode-go/" prefix).
-    models: ["deepseek-v4-pro", "deepseek-v4-flash", "kimi-k3", "kimi-k2.7-code", "glm-5.2", "qwen3.7-max"],
+    models: [
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+      "kimi-k3",
+      "kimi-k2.7-code",
+      "glm-5.2",
+      "minimax-m3",
+      "qwen3.7-max",
+      "grok-4.5",
+    ],
   },
   codex: {
     label: "OpenAI (подписка)",
@@ -60,7 +72,7 @@ export const CATALOG = {
       "google/gemini-2.5-pro",
       "google/gemini-2.5-flash",
       "deepseek/deepseek-chat",
-      "moonshotai/kimi-k2",
+      "moonshotai/kimi-k3",
     ],
   },
 };

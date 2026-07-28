@@ -34,7 +34,9 @@ const OPENCODE_MODELS = [
   "kimi-k3",
   "kimi-k2.7-code",
   "glm-5.2",
+  "minimax-m3",
   "qwen3.7-max",
+  "grok-4.5",
 ];
 
 const C = { g: "\x1b[32m", y: "\x1b[33m", c: "\x1b[36m", b: "\x1b[1m", r: "\x1b[31m", x: "\x1b[0m" };

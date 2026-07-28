@@ -6,8 +6,8 @@ Iva runs on your server with your keys. Here is every external service it talks 
 
 | Provider | Price | Text models | Vision |
 |---|---|---|---|
-| **OpenCode Go** (ex-Zen) | ~$5/mo | ~20 models fetched live at setup — `deepseek-v4-pro` (default), `kimi-k3`, `kimi-k2.7-code`, `glm-5.2`, `qwen3.7-max`, `minimax-m3`… | `gemini-3-flash` |
-| **Ollama Cloud** | ~$20/mo | `deepseek-v4-pro` (default) | `gemma3:12b` |
+| **OpenCode Go** (ex-Zen) | ~$5/mo | ~23 models fetched live at setup — `deepseek-v4-pro` (default), `kimi-k3`, `kimi-k2.7-code`, `glm-5.2`, `minimax-m3`, `qwen3.7-max`, `grok-4.5`… | `qwen3.7-plus` |
+| **Ollama Cloud** | ~$20/mo | ~19 models fetched live — `deepseek-v4-pro` (default), `kimi-k3`, `glm-5.2`, `minimax-m3`, `gpt-oss:120b`… | `gemma4:31b` |
 | **OpenRouter** | pay-as-you-go | 300+ models across vendors — pick any slug (`vendor/model`) | `google/gemini-2.5-flash` |
 | **OpenAI (ChatGPT subscription)** | your existing Plus/Pro/Team | the models your plan exposes (`gpt-5.x`, `-codex`), fetched live | same subscription (multimodal) |
 
@@ -21,7 +21,9 @@ The first three are plain API keys; the last rides your personal OpenAI subscrip
 MODEL_PROVIDER=opencode   # or ollama / openrouter / codex, then `iva restart`
 ```
 
-Start with Go: a quarter of the price, ~20 models to switch between (the wizard pulls the live list, so new ones like `kimi-k3` appear on their own). Keys, model pick and context-window settings live in [configuration.md](configuration.md).
+Start with Go: a quarter of the price, ~23 models to switch between (the wizard pulls the live list, so new ones like `kimi-k3` appear on their own). Keys, model pick and context-window settings live in [configuration.md](configuration.md).
+
+Two things about the live lists. Both catalogs churn — Ollama Cloud retired `gemma3:12b` on 2026-07-15 and Go dropped `gemini-3-flash`, so a hand-written model id in `.env` can start failing without you touching anything; if the bot goes quiet after weeks of silence on your side, re-run `iva config` and re-pick from the live list. And on Ollama Cloud the frontier tags (`kimi-k3` among them) bill as **extra usage** on top of the plan: with an empty extra-usage balance the API answers `402`, so top it up at [ollama.com/settings](https://ollama.com/settings) or stay on `deepseek-v4-pro`.
 
 ### OpenAI by ChatGPT subscription (`codex`)
 
