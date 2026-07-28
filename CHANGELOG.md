@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- 🔒 **Two high-severity DoS advisories closed in dependencies** — `brace-expansion` 5.0.6 → 5.0.8 (CVE-2026-14257: exponential-time expansion of `{}` groups; reported in #69, thanks [@anupamme](https://github.com/anupamme)) and `fast-xml-parser` 5.9.3 → 5.10.1 (GHSA-8r6m-32jq-jx6q: repeated DOCTYPE declarations reset entity-expansion limits). Both reach Iva transitively through `just-bash`; the fix is lockfile-only, `npm audit` is clean again.
 - 🖼️ **Photo descriptions were dead on both cheap providers** — vision runs on a hardcoded model per provider, and both had been retired out from under it: Ollama Cloud answered `410 gemma3:12b was retired at 2026-07-15`, OpenCode Go answered `401 Model gemini-3-flash is not supported`. Every photo silently landed in the vault with no description. Vision now uses `gemma4:31b` (Ollama) and `qwen3.7-plus` (Go), both re-verified against the live endpoints.
 - 🤖 **Kimi K3 in the model lists** — the new 1M-context Moonshot model is offered by `/model` and `iva config` on all three key-based providers: `kimi-k3` on OpenCode Go and Ollama Cloud, `moonshotai/kimi-k3` on OpenRouter (replacing the older `kimi-k2`). The offline fallback lists were re-synced with the live catalogs while we were there — Go gained `minimax-m3` and `grok-4.5`, and the Ollama list dropped two ids that provider never actually served (`qwen3.7-max`, `gemma3:12b`). Note that on Ollama Cloud `kimi-k3` bills as extra usage on top of the plan: with an empty extra balance it returns `402`.
 
