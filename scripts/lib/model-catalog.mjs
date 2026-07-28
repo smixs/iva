@@ -65,16 +65,26 @@ export const CATALOG = {
   },
 };
 
+// Ollama Cloud and OpenCode Go both expose OpenAI-compatible reasoning_effort.
+// Their /models payloads contain IDs only, so the API's common low/medium/high
+// contract is the best available capability signal. Codex is richer: its live
+// catalog carries a model-specific subset.
+const REASONING_PROVIDERS = new Set(["ollama", "opencode", "codex"]);
+
+export const providerSupportsReasoning = (provider) => REASONING_PROVIDERS.has(provider);
+export const providerFallbackReasoningLevels = (provider) =>
+  providerSupportsReasoning(provider) ? [...FALLBACK_EFFORTS] : [];
+
 const optionsFor = (provider, models) =>
   models.map((id) => ({
     id,
-    reasoningLevels: provider === "codex" ? [...FALLBACK_EFFORTS] : [],
+    reasoningLevels: providerFallbackReasoningLevels(provider),
   }));
 
 // Live model options with static fallback. Codex performs exactly one /models request
 // and keeps its model-specific reasoning levels on the in-memory wizard state.
 // 401/403 from key providers remains an actionable auth error; network/format failures
-// use static model buttons and low/medium/high for Codex.
+// use static model buttons and the provider's conservative reasoning fallback.
 export async function fetchModelOptions(provider, key, {
   dataDir,
   listCodexCatalog = listCodexModelCatalog,

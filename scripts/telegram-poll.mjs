@@ -16,7 +16,14 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { readEntries, summarize, formatUsageReport, parseWindow } from "./lib/usage.mjs";
 import { readEnvFresh, readEnvValues, upsertEnv } from "./lib/env-file.mjs";
-import { CATALOG, EFFORTS, FALLBACK_EFFORTS, fetchModelOptions, checkKey } from "./lib/model-catalog.mjs";
+import {
+  CATALOG,
+  EFFORTS,
+  fetchModelOptions,
+  checkKey,
+  providerFallbackReasoningLevels,
+  providerSupportsReasoning,
+} from "./lib/model-catalog.mjs";
 import { getAccessToken, runDeviceCodeLogin } from "./lib/codex-oauth.mjs";
 import { compactNumber, modelSummary } from "./lib/model-summary.mjs";
 import { acquireUpdateLock, releaseUpdateLock } from "./lib/update-safety.mjs";
@@ -592,7 +599,7 @@ async function currentConfig() {
   return {
     provider,
     model: env[cat.modelVar] || cat.def,
-    effort: provider === "codex" ? (env.THINKING_EFFORT ?? "").toLowerCase() : "",
+    effort: providerSupportsReasoning(provider) ? (env.THINKING_EFFORT ?? "").toLowerCase() : "",
   };
 }
 
@@ -641,13 +648,15 @@ async function handleThinkCmd(chatId, from, { msgId } = {}) {
   const { provider, model, effort } = await currentConfig();
   const st = newWizard(chatId, from, "think");
   st.msgId = msgId ?? null;
-  if (provider !== "codex") {
+  if (!providerSupportsReasoning(provider)) {
     await endWizard(st, tr(
-      `Thinking level is unavailable for ${CATALOG[provider].label}. Choose OpenAI subscription via /model first.`,
-      `Уровень размышлений недоступен для ${CATALOG[provider].label}. Сначала выбери подписку OpenAI через /model.`,
+      `Adjustable thinking is unavailable for ${CATALOG[provider].label}. Choose a reasoning-capable provider via /model.`,
+      `Настраиваемые размышления недоступны для ${CATALOG[provider].label}. Выбери провайдера с reasoning через /model.`,
     ), menuRow());
     return;
   }
+  const cat = CATALOG[provider];
+  const env = await readEnvValues(ENV_PATH);
   st.step = "loading";
   await wizScreen(st, tr(
     `Loading thinking levels for ${model}…`,
@@ -656,7 +665,7 @@ async function handleThinkCmd(chatId, from, { msgId } = {}) {
   if (!wizardIsCurrent(st)) return;
   const loaded = await runWizardRequest(
     st,
-    () => fetchModelOptions("codex", undefined, { dataDir: DATA_DIR_ABS }),
+    () => fetchModelOptions(provider, cat.keyVar ? env[cat.keyVar] : undefined, { dataDir: DATA_DIR_ABS }),
   );
   if (loaded.stale) return;
   if (!loaded.ok) return endWizard(st, tr(
@@ -665,7 +674,7 @@ async function handleThinkCmd(chatId, from, { msgId } = {}) {
   ), menuRow());
   const options = loaded.value;
   const option = options.find((candidate) => candidate.id === model)
-    || { id: model, reasoningLevels: [...FALLBACK_EFFORTS] };
+    || { id: model, reasoningLevels: providerFallbackReasoningLevels(provider) };
   st.modelOptions = [option];
   st.model = model;
   st.efforts = [...option.reasoningLevels];
@@ -757,7 +766,7 @@ async function showModelScreen(st) {
   const current = env[cat.modelVar];
   const currentOption = current
     ? options.find((option) => option.id === current)
-      || { id: current, reasoningLevels: st.provider === "codex" ? [...FALLBACK_EFFORTS] : [] }
+      || { id: current, reasoningLevels: providerFallbackReasoningLevels(st.provider) }
     : null;
   st.modelOptions = [
     ...(currentOption ? [currentOption] : []),
@@ -896,7 +905,7 @@ async function handleWizardCallback(cq) {
   if (action.startsWith("m:")) {
     const option = selectWizardModel(st, action.slice("m:".length));
     if (!option) return true;
-    if (st.provider !== "codex") {
+    if (option.reasoningLevels.length === 0) {
       st.effort = null;
       try {
         await saveWizard(st);

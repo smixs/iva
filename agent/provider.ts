@@ -54,12 +54,19 @@ export const providerName = PROVIDER;
 export const providerConfig = PROVIDERS[PROVIDER as keyof typeof PROVIDERS] ?? PROVIDERS.ollama;
 
 // THINKING_EFFORT (.env, пишут /model и /think в Telegram): reasoning-усилие модели.
-// Нативно применяется только на codex (providerOptions.openai.reasoningEffort → reasoning.effort
-// в теле /responses, см. codexProviderOptions). Для остальных провайдеров — сохранённый профиль
-// без рантайм-эффекта. Уровни — из общего каталога мастера (model-catalog.mjs), чтобы список
-// кнопок и валидация не разъезжались. Невалидное/пустое значение молча игнорируем («не задан»).
+// Codex получает его через providerOptions.openai.reasoningEffort ниже. Ollama Cloud
+// и OpenCode Go говорят на OpenAI-compatible chat/completions; eve передаёт им
+// provider-agnostic reasoning как reasoning_effort (см. compatibleThinkingEffort).
+// Уровни — из общего каталога мастера, чтобы кнопки и рантайм не разъезжались.
 const effortRaw = (process.env.THINKING_EFFORT ?? "").toLowerCase();
 export const thinkingEffort = EFFORTS.includes(effortRaw) ? effortRaw : undefined;
+const COMPATIBLE_EFFORTS = ["low", "medium", "high"] as const;
+type CompatibleEffort = (typeof COMPATIBLE_EFFORTS)[number];
+export const compatibleThinkingEffort: CompatibleEffort | undefined =
+  (PROVIDER === "ollama" || PROVIDER === "opencode")
+  && (COMPATIBLE_EFFORTS as readonly string[]).includes(effortRaw)
+    ? effortRaw as CompatibleEffort
+    : undefined;
 
 // --- Codex (подписка ChatGPT): Responses API через @ai-sdk/openai ----------------------------
 // Кастомный fetch: перед КАЖДЫМ запросом подставляет свежий Bearer + ChatGPT-Account-ID

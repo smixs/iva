@@ -2,7 +2,13 @@ import { defineAgent } from "eve";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 // Провайдер и его модели — единый источник в provider.ts (тот же конфиг у agent/vision.ts).
 // codex = подписка ChatGPT (Responses API + OAuth); ollama/opencode = OpenAI-совместимый chat.
-import { providerConfig as cfg, providerName, withReasoningStripped, makeCodexModel } from "./provider.js";
+import {
+  compatibleThinkingEffort,
+  providerConfig as cfg,
+  providerName,
+  withReasoningStripped,
+  makeCodexModel,
+} from "./provider.js";
 
 // Codex-подписка говорит на Responses API — отдельная модель-фабрика (@ai-sdk/openai).
 // Остальные провайдеры — OpenAI-совместимый chat/completions через openai-compatible.
@@ -21,6 +27,9 @@ const textModel =
 
 export default defineAgent({
   model: withReasoningStripped(textModel),
+  // eve maps this provider-agnostic setting to reasoning_effort for the
+  // OpenAI-compatible Ollama Cloud and OpenCode Go endpoints.
+  reasoning: compatibleThinkingEffort,
   // Кастомный провайдер не отдаёт метаданные окна через AI Gateway — задаём вручную.
   // ВАЖНО: значение ОБЯЗАНО быть ≤ реального окна модели, иначе запрос переполнит окно до компактации.
   modelContextWindowTokens: cfg.contextWindow,
