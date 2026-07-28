@@ -5,6 +5,7 @@ import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
+import { selfRestartViolation } from "../lib/self-restart-guard.ts";
 
 // Host-native bash. Переопределяет встроенный sandbox-bash eve: команда выполняется
 // напрямую на реальной файловой системе VPS через node:child_process (без sandbox).
@@ -249,7 +250,10 @@ export default defineTool({
     "файловой системе и окружению). Возвращает { stdout, stderr, exitCode }. " +
     "Очень большой вывод обрезается до последних ~30000 символов каждого потока " +
     "(в этом случае добавляется пометка об усечении). " +
-    "Используй для запуска любых команд: git, ls, uv, systemctl --user и т.д.",
+    "Используй для запуска любых команд: git, ls, uv, systemctl --user и т.д. " +
+    "Команды, останавливающие сервис самой Ивы (iva restart/stop/update, " +
+    "systemctl … restart iva, pkill node), заблокированы — перезапуск инициирует " +
+    "только пользователь: /restart или /update в чате, iva restart в терминале.",
   inputSchema: z.object({
     command: z.string().min(1).describe("Shell-команда для выполнения на хосте"),
     cwd: z
@@ -271,6 +275,11 @@ export default defineTool({
       ),
   }),
   async execute({ command, cwd, timeoutMs }) {
+    // Самоубийственные команды режем ДО запуска: рестарт собственного сервиса посреди
+    // хода оставляет ход в running навсегда, сервис уходит в цикл переигрываний, а бот
+    // немеет с HookConflictError (issue #68). Промпт-запрета мало — модели его игнорируют.
+    const lethal = selfRestartViolation(command);
+    if (lethal) return { stdout: "", stderr: lethal, exitCode: 1 };
     const timeout = timeoutMs ?? 120_000;
     if (
       !Number.isSafeInteger(timeout) ||
