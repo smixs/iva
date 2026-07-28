@@ -1,5 +1,12 @@
 # Implementation notes
 
+## Release 0.3.4
+
+- Patch version only: no dependency or runtime change is introduced by the release commit.
+- The existing Unreleased contributor-audit notes become the dated 0.3.4 changelog.
+- Both root README files summarize the same three user-facing themes: model-aware thinking controls, scoped Telegram recovery on Eve 0.27.8, and data/security hardening.
+- The Russian README's stale Eve 0.24.4 reference is synchronized to 0.27.8.
+
 ## Model-specific reasoning buttons
 
 - Reimplemented the useful part of PR #34 on current `main`, while keeping its author credited in the new draft PR.
