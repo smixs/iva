@@ -13,6 +13,7 @@ test("летальные команды iva CLI блокируются во вс
   blocked("iva reset");
   blocked("iva full-reset");
   blocked("iva update");
+  blocked("iva doctor"); // ремонтные ветки доктора сами рестартуют iva.service
   blocked("cd /home/shima/iva && iva restart");
   blocked("node bin/iva.mjs restart");
   blocked("./bin/iva.mjs update");
@@ -28,6 +29,18 @@ test("systemctl с летальным глаголом по iva.service блок
   blocked("systemctl --user try-restart iva");
   blocked("sudo systemctl restart iva.service");
   blocked("systemctl --user restart iva-telegram-poll iva.service"); // iva.service в списке юнитов
+});
+
+test("обход кавычками и обёртками не работает (ревью P1)", () => {
+  blocked('systemctl --user restart "iva.service"');
+  blocked("iva 'restart'");
+  blocked('iva "restart"');
+  blocked('bash -c "iva restart"');
+  blocked("sh -c 'systemctl --user stop iva'");
+  blocked("timeout 30 iva restart");
+  blocked("env FOO=bar iva restart");
+  blocked("nohup iva restart");
+  blocked("sudo -n systemctl kill iva");
 });
 
 test("массовое убийство процессов node/eve блокируется", () => {
@@ -46,10 +59,17 @@ test("диагностика и безопасные операции по iva-�
   allowed("systemctl --user restart iva-telegram-poll"); // мост — не процесс агента
   allowed("systemctl --user restart iva-memory-daily.timer");
   allowed("systemctl --user daemon-reload");
-  allowed("iva doctor");
   allowed("iva usage");
   allowed("iva login");
   allowed("npx eve build");
+});
+
+test("упоминания в аргументах — не команды (ревью P3)", () => {
+  allowed("rg -n 'iva restart' docs/");
+  allowed('grep -rn "systemctl --user restart iva" .');
+  allowed("echo 'iva restart'");
+  allowed('printf "после правок нужен iva restart\\n" >> notes.md');
+  allowed("git log --grep 'iva update'");
 });
 
 test("летальный глагол одной команды не дотягивается до iva из следующей", () => {
@@ -58,8 +78,7 @@ test("летальный глагол одной команды не дотяг�
 });
 
 test('слова с "iva" внутри и невинные kill не матчатся', () => {
-  allowed("echo deriva restart");
-  allowed("grep -r 'saliva update' docs/");
+  allowed("deriva restart"); // не команда iva
   allowed("pkill -f chromium");
   allowed("kill -0 12345");
 });
