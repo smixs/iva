@@ -12,6 +12,7 @@ process.env.TELEGRAM_BOT_TOKEN = "999:test-token";
 process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN = "test-secret";
 process.env.TELEGRAM_ALLOWED_USER_IDS = "42";
 process.env.TELEGRAM_POLL_SETTLE_MS = "0";
+process.env.TELEGRAM_COLLECT_QUIET_MS = "0";
 process.env.AGENT_LANGUAGE = "en";
 
 mkdirSync(dataDir, { recursive: true });

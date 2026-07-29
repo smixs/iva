@@ -67,6 +67,14 @@ import {
   TELEGRAM_QUEUE_FATAL_DURABILITY,
   writeQueueFileAtomic,
 } from "./lib/telegram-queue.mjs";
+import {
+  COLLECT_QUIET_MS,
+  collectorOffer,
+  collectorPending,
+  collectorRestore,
+  collectorTakeExpired,
+  createCollector,
+} from "./lib/telegram-collect.mjs";
 // Двуязычие: единый источник языка (getLang) + одна таблица команд (COMMANDS) для /help
 // и синего командного меню Telegram. tr(en, ru) — функция (язык не замораживаем в const).
 import { getLang, tr, helpText, botCommands } from "./lib/i18n.mjs";
@@ -98,6 +106,14 @@ const OFFSET_FILE = join(DATA_DIR, "telegram-offset.json");
 // Pause between updates of the SAME chat: we give eve time to park the turn and register
 // the continuation hook, otherwise a burst starts a second run on the same token → HookConflictError.
 const SETTLE_MS = Number(process.env.TELEGRAM_POLL_SETTLE_MS ?? 1500);
+const rawCollectQuietMs = Number(
+  process.env.TELEGRAM_COLLECT_QUIET_MS ?? COLLECT_QUIET_MS,
+);
+const configuredCollectQuietMs =
+  Number.isFinite(rawCollectQuietMs) && rawCollectQuietMs >= 0
+    ? rawCollectQuietMs
+    : COLLECT_QUIET_MS;
+const messageCollector = createCollector({ quietMs: configuredCollectQuietMs });
 const UPDATE_JOB_TTL_MS = 6 * 60 * 60 * 1000;
 
 // Trusted IDs — only they are allowed control commands (/restart etc.).
@@ -555,6 +571,47 @@ async function acknowledgeQueued(update, count) {
       ? {}
       : { message_thread_id: message.message_thread_id }),
   }).catch((error) => log("queue status failed:", error.message));
+}
+
+export async function routeMessageUpdate(
+  update,
+  {
+    chatKeyImpl = chatKey,
+    loadQueueImpl = loadQueue,
+    runningImpl = isRunning,
+    inFlight = queueInFlight,
+    queueCountImpl = queueCount,
+    replyToBotImpl = isReplyToBot,
+    shouldQueueImpl = shouldQueueBusyUpdate,
+    enqueueImpl = (key, candidate) => enqueueQueueFile(QUEUE_FILE, key, candidate),
+    acknowledgeImpl = acknowledgeQueued,
+    deliverImpl = pacedDeliver,
+    allowedUserIds = ALLOWED,
+    botUsername = BOT_USERNAME,
+    logImpl = log,
+  } = {},
+) {
+  const key = chatKeyImpl(update);
+  if (update.message && key !== null && !replyToBotImpl(update.message)) {
+    const queue = await loadQueueImpl();
+    const mustQueue =
+      runningImpl(key) || inFlight.has(key) || queueCountImpl(queue, key) > 0;
+    if (mustQueue) {
+      if (!shouldQueueImpl(update, { allowedUserIds, botUsername })) return "dropped";
+      let queued;
+      try {
+        queued = await enqueueImpl(key, update);
+      } catch (error) {
+        logImpl(`queue enqueue failed for update ${update.update_id}:`, error.message);
+        return "enqueue-failed";
+      }
+      await acknowledgeImpl(update, queued.count);
+      return "queued";
+    }
+  }
+
+  const accepted = await deliverImpl(update);
+  return accepted ? "delivered" : "rejected";
 }
 
 export async function drainReadyQueueHeads({
@@ -1619,8 +1676,27 @@ async function main() {
   for (;;) {
     // One head per idle chat/topic per pass. While any queue remains, use a short
     // Telegram long-poll so terminal/stale run-status changes trigger drain quickly.
-    const pendingQueueCount = await drainReadyQueueHeads();
-    const pollSeconds = pendingQueueCount > 0 ? 1 : 30;
+    let pendingQueueCount = await drainReadyQueueHeads();
+    let collectorWriteFailed = false;
+    for (const update of collectorTakeExpired(messageCollector, Date.now())) {
+      const routed = await routeMessageUpdate(update);
+      if (routed === "delivered") {
+        delivered =
+          delivered === null ? update.update_id : Math.max(delivered, update.update_id);
+        await saveOffset(offset, delivered);
+      } else if (routed === "queued") {
+        pendingQueueCount = Math.max(1, pendingQueueCount);
+      } else if (routed === "enqueue-failed") {
+        collectorRestore(messageCollector, update);
+        collectorWriteFailed = true;
+      }
+    }
+    if (collectorWriteFailed) {
+      await sleep(3000);
+      continue;
+    }
+    const pollSeconds =
+      pendingQueueCount > 0 || collectorPending(messageCollector) > 0 ? 1 : 30;
     let data;
     try {
       data = await tg("getUpdates", {
@@ -1658,55 +1734,39 @@ async function main() {
         await saveOffset(offset, delivered);
         continue;
       }
-      const key = chatKey(update);
-      // Busy-time queue gate (messages only). callback_query and replies to bot
-      // messages pass immediately because Eve HITL/ForceReply answers would deadlock
-      // in the FIFO. A pre-existing FIFO also captures new eligible updates while an
-      // idle transition is being observed, preserving order around the drain boundary.
-      if (update.message && key !== null && !isReplyToBot(update.message)) {
-        const queue = await loadQueue();
-        const mustQueue =
-          isRunning(key) || queueInFlight.has(key) || queueCount(queue, key) > 0;
-        if (mustQueue) {
-          if (!shouldQueueBusyUpdate(update, {
-            allowedUserIds: ALLOWED,
-            botUsername: BOT_USERNAME,
-          })) {
-            // Untrusted private messages and unaddressed group noise must never enter
-            // the owner's later model context. Consume them exactly once.
-            offset = update.update_id + 1;
-            await saveOffset(offset, delivered);
-            continue;
-          }
-          let queued;
-          try {
-            queued = await enqueueQueueFile(QUEUE_FILE, key, update);
-          } catch (error) {
-            // Do not advance past this update or process later updates in the same
-            // Telegram batch. getUpdates will retry it at the current durable offset.
-            log(`queue enqueue failed for update ${update.update_id}:`, error.message);
-            queueWriteFailed = true;
-            break;
-          }
+      let candidate = update;
+      let collected = false;
+      if (update.message && !isReplyToBot(update.message)) {
+        const offered = collectorOffer(messageCollector, update, Date.now());
+        if (offered.status === "buffered") {
+          // The quiet-window buffer is intentionally in-memory. Advancing now avoids
+          // replaying every part, but a process crash can lose this one pending burst.
           offset = update.update_id + 1;
           await saveOffset(offset, delivered);
-          await acknowledgeQueued(update, queued.count);
           continue;
         }
+        if (offered.status === "ready") {
+          candidate = offered.update;
+          collected = true;
+          offset = update.update_id + 1;
+          await saveOffset(offset, delivered);
+        }
       }
-      // Don't deliver the next update of the same chat until eve has parked the previous turn
-      // (pause measured from the last delivery to this chat) — otherwise a burst → HookConflict.
-      // pacedDeliver держит lastDeliverAt на модуль-уровне, общую с deps.deliver меню.
-      const accepted = await pacedDeliver(update);
-      offset = update.update_id + 1;
-      if (accepted) {
-        delivered = update.update_id;
-        await saveOffset(offset, delivered);
-      } else {
-        // Direct malformed updates retain the existing bounded-drop behavior.
-        // Durable FIFO heads use a separate path and are never removed on false.
-        await saveOffset(offset, delivered);
+
+      const routed = await routeMessageUpdate(candidate);
+      if (routed === "enqueue-failed") {
+        if (collected) collectorRestore(messageCollector, candidate);
+        // Passthrough retains the old durable retry point. Collected parts already
+        // advanced offset when buffered and retry from the restored in-memory burst.
+        queueWriteFailed = true;
+        break;
       }
+      if (!collected) offset = update.update_id + 1;
+      if (routed === "delivered") {
+        delivered =
+          delivered === null ? candidate.update_id : Math.max(delivered, candidate.update_id);
+      }
+      await saveOffset(offset, delivered);
     }
     if (queueWriteFailed) await sleep(3000);
   }

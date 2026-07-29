@@ -13,6 +13,7 @@ const {
   selectWizardEffort,
   runWizardRequest,
   resolveThinkCatalogLoad,
+  routeMessageUpdate,
   selectableWizardOptions,
   validateAndSaveWizard,
 } = await import("./telegram-poll.mjs");
@@ -39,6 +40,93 @@ function recorder(content = '{"installed":{}}', { deleteOk = true } = {}) {
   };
   return { calls, io, names: () => calls.map((c) => c[0]) };
 }
+
+const routedUpdate = {
+  update_id: 10,
+  message: {
+    message_id: 10,
+    date: 1,
+    chat: { id: 1, type: "private" },
+    from: { id: 42, is_bot: false },
+    text: "hello",
+  },
+};
+
+function routeDeps(overrides = {}) {
+  return {
+    chatKeyImpl: () => "1:",
+    loadQueueImpl: async () => ({ version: 1, queues: {} }),
+    runningImpl: () => false,
+    inFlight: new Map(),
+    queueCountImpl: () => 0,
+    replyToBotImpl: () => false,
+    shouldQueueImpl: () => true,
+    enqueueImpl: async () => ({ count: 1 }),
+    acknowledgeImpl: async () => {},
+    deliverImpl: async () => true,
+    logImpl: () => {},
+    ...overrides,
+  };
+}
+
+test("routeMessageUpdate enqueues and acknowledges one busy update", async () => {
+  let enqueued = 0;
+  let acknowledged = 0;
+  let delivered = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    runningImpl: () => true,
+    enqueueImpl: async (key, update) => {
+      enqueued++;
+      assert.equal(key, "1:");
+      assert.equal(update, routedUpdate);
+      return { count: 3 };
+    },
+    acknowledgeImpl: async (update, count) => {
+      acknowledged++;
+      assert.equal(update, routedUpdate);
+      assert.equal(count, 3);
+    },
+    deliverImpl: async () => {
+      delivered++;
+      return true;
+    },
+  }));
+
+  assert.equal(result, "queued");
+  assert.equal(enqueued, 1);
+  assert.equal(acknowledged, 1);
+  assert.equal(delivered, 0);
+});
+
+test("routeMessageUpdate sends one idle update through paced delivery", async () => {
+  let delivered = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    deliverImpl: async (update) => {
+      delivered++;
+      assert.equal(update, routedUpdate);
+      return true;
+    },
+  }));
+
+  assert.equal(result, "delivered");
+  assert.equal(delivered, 1);
+});
+
+test("routeMessageUpdate reports enqueue failure without acknowledging", async () => {
+  let acknowledged = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    runningImpl: () => true,
+    enqueueImpl: async () => {
+      throw new Error("disk full");
+    },
+    acknowledgeImpl: async () => {
+      acknowledged++;
+    },
+  }));
+
+  assert.equal(result, "enqueue-failed");
+  assert.equal(acknowledged, 0);
+});
 
 test("readCappedStream reads a small body under the cap", async () => {
   assert.equal(await readCappedStream(streamOf('{"installed":{}}'), 1024), '{"installed":{}}');
