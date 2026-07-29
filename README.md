@@ -28,6 +28,11 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ## What's New 🔥
 
+### 29.07.2026
+
+- 🖼️ An album of photos with a caption, a forwarded post, or a long split message is understood as one message — one reply instead of several.
+- 📬 The first message after Iva's reply is delivered right away, without a false "queued" notice.
+
 ### 28.07.2026
 
 #### v0.3.5
