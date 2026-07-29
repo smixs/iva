@@ -12,7 +12,7 @@ process.env.TELEGRAM_BOT_TOKEN = "999:test-token";
 process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN = "test-secret";
 process.env.TELEGRAM_ALLOWED_USER_IDS = "42";
 process.env.TELEGRAM_POLL_SETTLE_MS = "0";
-process.env.TELEGRAM_COLLECT_QUIET_MS = "0";
+process.env.TELEGRAM_COLLECT_QUIET_MS ??= "0";
 process.env.AGENT_LANGUAGE = "en";
 
 mkdirSync(dataDir, { recursive: true });
@@ -32,6 +32,7 @@ if (
   mode === "disk-failure" ||
   mode === "dir-sync-retry" ||
   mode === "auto-drain" ||
+  mode === "collect-burst" ||
   mode === "restart-persist" ||
   mode === "routing"
 ) {
@@ -223,7 +224,7 @@ globalThis.fetch = async (url, options = {}) => {
       return jsonResponse({}, 503);
     }
     if (
-      (mode === "auto-drain" || mode === "restart-drain") &&
+      (mode === "auto-drain" || mode === "collect-burst" || mode === "restart-drain") &&
       new URL(target).pathname === "/eve/v1/telegram/accepted"
     ) {
       status.setChatStatus(privateKey, {
@@ -276,6 +277,26 @@ globalThis.fetch = async (url, options = {}) => {
         });
       }
       if (getUpdatesCalls >= 6) finish();
+      return jsonResponse({ ok: true, result: [] });
+    }
+    if (mode === "collect-burst") {
+      if (getUpdatesCalls === 1) {
+        return jsonResponse({
+          ok: true,
+          result: [privateUpdate(101, "first"), privateUpdate(102, "second")],
+        });
+      }
+      if (getUpdatesCalls === 2) {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 120));
+      }
+      if (getUpdatesCalls === 3 || (getUpdatesCalls > 3 && status.isRunning(privateKey))) {
+        status.setChatStatus(privateKey, {
+          status: "idle",
+          sessionId: null,
+          turnId: null,
+        });
+      }
+      if (getUpdatesCalls >= 5) finish();
       return jsonResponse({ ok: true, result: [] });
     }
     if (mode === "restart-persist") {

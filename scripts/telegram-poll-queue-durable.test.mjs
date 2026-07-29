@@ -14,13 +14,13 @@ function makeDataDir(t, label) {
   return path;
 }
 
-function runHarness(mode, dataDir, fault = "none") {
+function runHarness(mode, dataDir, fault = "none", { collectQuietMs = "0" } = {}) {
   const result = spawnSync(
     process.execPath,
     ["--experimental-test-module-mocks", HARNESS, mode, dataDir, fault],
     {
       cwd: ROOT,
-      env: { ...process.env },
+      env: { ...process.env, TELEGRAM_COLLECT_QUIET_MS: collectQuietMs },
       encoding: "utf8",
       timeout: 10_000,
     },
@@ -94,6 +94,28 @@ test("queued follow-ups auto-drain in FIFO order when the current turn becomes i
       "Queued (2). I'll start it automatically when the current task finishes.",
     ],
   );
+});
+
+test("collector merges a two-text burst into one durable queue item and delivery", (t) => {
+  const dataDir = makeDataDir(t, "collect-burst");
+  const result = runHarness("collect-burst", dataDir, "none", { collectQuietMs: "75" });
+
+  assert.equal(result.deliveries.length, 1);
+  assert.equal(result.deliveries[0].update_id, 102);
+  assert.deepEqual(
+    result.deliveries[0].message.iva_parts.map((part) => [part.message_id, part.text]),
+    [
+      [101, "first"],
+      [102, "second"],
+    ],
+  );
+  assert.deepEqual(result.deliveryRoutes, ["/eve/v1/telegram/accepted"]);
+  assert.equal(result.reactions.length, 1);
+  assert.deepEqual(
+    result.queueStatuses.map((status) => status.text),
+    ["Queued (1). I'll start it automatically when the current task finishes."],
+  );
+  assert.deepEqual(result.queue, { version: 1, queues: {} });
 });
 
 test("a restarted bridge recovers and drains the persisted FIFO without a third user message", (t) => {
