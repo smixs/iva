@@ -32,6 +32,13 @@ gws docs +write --document ID --text "Абзац"
 gws workflow +weekly-digest                    # встречи недели + число непрочитанных
 ```
 
+## Google Calendar: загружай сценарий действия
+
+- Создание события или настройка календарных defaults → `google-calendar-create`.
+- Перенос времени, изменение длительности или перенос между календарями → `google-calendar-reschedule`.
+- Правка названия, места, описания, участников, напоминаний и остальных полей → `google-calendar-update`.
+- Удаление одного события, экземпляра либо серии → `google-calendar-delete`.
+
 Полный Discovery-доступ к любому методу API (когда хелпера нет):
 ```bash
 gws drive files list --params '{"pageSize":10}'
