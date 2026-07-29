@@ -637,7 +637,7 @@ export async function drainReadyQueueHeads({
   gateWaitMs = RUN_STALE_MS,
 } = {}) {
   const snapshot = await loadImpl();
-  const keys = queueKeys(snapshot);
+  const keys = [...new Set([...queueKeys(snapshot), ...inFlight.keys()])];
   const previousIndex = keys.indexOf(rotationState.afterKey);
   const orderedKeys =
     previousIndex < 0
@@ -671,8 +671,9 @@ export async function drainReadyQueueHeads({
       if (running) continue;
       inFlight.delete(key);
     }
-    if (running || (settleUntil.get(key) ?? 0) > now()) continue;
     const item = queueHead(snapshot, key);
+    if (!item) continue;
+    if (running || (settleUntil.get(key) ?? 0) > now()) continue;
     const update = materializeQueueItem(key, item, { legacyAllowedUserIds });
     if (!update) {
       if (!undrainableLegacyLogged.has(key)) {

@@ -40,7 +40,7 @@ const statusDataDir = mkdtempSync(join(tmpdir(), "iva-telegram-queue-status-"));
 process.env.ASSISTANT_DATA_DIR = statusDataDir;
 after(() => rmSync(statusDataDir, { recursive: true, force: true }));
 const status = await import("./run-status.mjs");
-const { drainReadyQueueHeads } = await import("../telegram-poll.mjs");
+const { drainReadyQueueHeads, routeMessageUpdate } = await import("../telegram-poll.mjs");
 
 const privateUpdate = (updateId, text) => ({
   update_id: updateId,
@@ -323,6 +323,63 @@ test("an accepted head must observe its turn running and then idle before the ne
 
   running = false;
   assert.equal(await drainReadyQueueHeads(options), 0);
+  assert.deepEqual(delivered, [101, 102]);
+});
+
+test("drain removes an orphaned running gate after the last queued turn becomes idle", async () => {
+  const key = "1:";
+  let document = enqueueItem(
+    { version: 1, queues: {} },
+    key,
+    createQueueItem(privateUpdate(101, "queued"), 1),
+  ).document;
+  let running = false;
+  const delivered = [];
+  const inFlight = new Map();
+  const options = {
+    loadImpl: async () => document,
+    runningImpl: () => running,
+    deliverImpl: async (update) => {
+      delivered.push(update.update_id);
+      running = true;
+      return true;
+    },
+    acknowledgeImpl: async (chatKey, updateId) => {
+      document = removeQueueHead(document, chatKey, updateId);
+    },
+    settleUntil: new Map(),
+    inFlight,
+  };
+
+  assert.equal(await drainReadyQueueHeads(options), 0);
+  assert.equal(inFlight.get(key)?.state, "running");
+
+  await drainReadyQueueHeads(options);
+  assert.equal(inFlight.get(key)?.state, "running", "the active turn must keep its gate");
+  assert.deepEqual(delivered, [101]);
+
+  running = false;
+  await drainReadyQueueHeads(options);
+  assert.equal(inFlight.has(key), false);
+
+  const fresh = privateUpdate(102, "fresh");
+  const routed = await routeMessageUpdate(fresh, {
+    chatKeyImpl: () => key,
+    loadQueueImpl: async () => document,
+    runningImpl: () => running,
+    inFlight,
+    queueCountImpl: queueCount,
+    replyToBotImpl: () => false,
+    shouldQueueImpl: () => true,
+    enqueueImpl: async () => ({ count: 1 }),
+    acknowledgeImpl: async () => {},
+    deliverImpl: async (update) => {
+      delivered.push(update.update_id);
+      return true;
+    },
+  });
+
+  assert.equal(routed, "delivered");
   assert.deepEqual(delivered, [101, 102]);
 });
 
