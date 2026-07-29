@@ -15,19 +15,19 @@ const reschedule = readSkill("google-calendar-reschedule");
 const update = readSkill("google-calendar-update");
 const remove = readSkill("google-calendar-delete");
 
-test("Google Workspace routes Calendar writes to focused skills", () => {
-  for (const name of [
-    "google-calendar-create",
-    "google-calendar-reschedule",
-    "google-calendar-update",
-    "google-calendar-delete",
-  ]) {
-    assert.ok(workspace.includes("`" + name + "`"));
-  }
+const readDescription = (skill) =>
+  skill.match(/^---\s*\ndescription:\s*(.+)\n---/u)?.[1] ?? "";
 
+test("Eve can route Calendar mutations directly from skill descriptions", () => {
+  assert.match(readDescription(create), /создания события Google Calendar/);
+  assert.match(readDescription(reschedule), /переноса времени.*длительности/s);
+  assert.match(readDescription(update), /изменения названия.*напоминаний/s);
+  assert.match(readDescription(remove), /удаления события/);
+  assert.doesNotMatch(readDescription(workspace), /создать событие|создай встречу/u);
+  assert.doesNotMatch(workspace, /google-calendar-(?:create|reschedule|update|delete)/u);
   assert.match(instructions, /Вывод — структурированный\s+JSON/s);
-  assert.match(instructions, /для записи в Calendar — указанный\s+там сценарный скилл/s);
-  assert.match(instructions, /код выхода 2.*подключению ключа/s);
+  assert.doesNotMatch(instructions, /сначала загрузи скилл `google-workspace`/u);
+  assert.match(instructions, /код выхода 2.*загрузи скилл `google-workspace`/s);
 });
 
 test("Google Calendar policy creates one event with explicit reminders", () => {

@@ -1,5 +1,5 @@
 ---
-description: Работа с Google-сервисами через CLI `gws` (Google Workspace CLI) — Gmail, Google Календарь, Drive, Таблицы, Документы, Chat. Используй, когда просят почитать/отправить письмо в Gmail, посмотреть/создать событие в календаре, найти/загрузить файл на Drive, прочитать/дописать Google Таблицу или Документ. Здесь же — пошаговое подключение (регистрация ключа), если `gws` ещё не авторизован. Триггеры — «проверь почту», «напиши письмо», «что у меня в календаре», «создай встречу», «загрузи на диск», «Google Таблица», «подключи Google».
+description: Работа с Google-сервисами через CLI `gws` (Google Workspace CLI) — Gmail, чтение Google Календаря, Drive, Таблицы, Документы, Chat и OAuth-подключение. Используй, когда просят почитать или отправить письмо, посмотреть календарь, найти или загрузить файл на Drive, прочитать или дополнить Google Таблицу либо Документ, подключить Google или устранить ошибку авторизации.
 ---
 
 # Google Workspace (`gws`)
@@ -24,20 +24,12 @@ gws gmail +triage                              # непрочитанные: о�
 gws gmail +send --to a@b.com --subject "Тема" --body "Текст"
 gws gmail +reply --message-id ID --body "Ответ"
 gws calendar +agenda                           # ближайшие события (в таймзоне Google-аккаунта)
-gws calendar +insert --json '{"summary":"Созвон","start":{"dateTime":"..."},"end":{"dateTime":"..."}}'
 gws drive +upload ./file.pdf --name "Отчёт"
 gws sheets +read --spreadsheet ID --range 'Sheet1!A1:C10'
 gws sheets +append --spreadsheet ID --values "Alice,95"
 gws docs +write --document ID --text "Абзац"
 gws workflow +weekly-digest                    # встречи недели + число непрочитанных
 ```
-
-## Google Calendar: загружай сценарий действия
-
-- Создание события или настройка календарных defaults → `google-calendar-create`.
-- Перенос времени, изменение длительности или перенос между календарями → `google-calendar-reschedule`.
-- Правка названия, места, описания, участников, напоминаний и остальных полей → `google-calendar-update`.
-- Удаление одного события, экземпляра либо серии → `google-calendar-delete`.
 
 Полный Discovery-доступ к любому методу API (когда хелпера нет):
 ```bash
