@@ -362,18 +362,28 @@ export function shouldQueueBusyUpdate(
   },
 ) {
   const message = update?.message;
-  if (!message || message.from?.is_bot === true || !hasMessagePayload(message)) return false;
+  const parts = Array.isArray(message?.iva_parts) ? message.iva_parts : [message];
+  if (
+    !message ||
+    message.from?.is_bot === true ||
+    !parts.some((part) => part && hasMessagePayload(part))
+  ) {
+    return false;
+  }
   const allowed = allowedUserIds instanceof Set ? allowedUserIds : new Set(allowedUserIds ?? []);
   const from = String(message.from?.id ?? "");
   if (!allowed.size || !allowed.has(from)) return false;
   if (message.chat?.type === "private") return true;
   if (message.chat?.type === "channel") return false;
-  const { text, entities } = messageTextAndEntities(message);
   const username = normalizeBotUsername(botUsername);
-  return (
-    isBotCommand(text, username, entities) ||
-    hasExactMention(text, entities, username)
-  );
+  return parts.some((part) => {
+    if (!part || typeof part !== "object") return false;
+    const { text, entities } = messageTextAndEntities(part);
+    return (
+      isBotCommand(text, username, entities) ||
+      hasExactMention(text, entities, username)
+    );
+  });
 }
 
 export async function loadQueueFile(

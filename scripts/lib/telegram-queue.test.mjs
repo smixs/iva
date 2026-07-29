@@ -699,6 +699,44 @@ test("busy routing is fail-closed and keeps addressed private, group and topic u
   assert.equal(shouldQueueBusyUpdate(group("@my_bot_suffix"), options), false);
 });
 
+test("busy group routing sees mentions and commands in collected iva_parts", () => {
+  const options = { allowedUserIds: new Set(["42"]), botUsername: "my_bot" };
+  const collected = (text) => ({
+    update_id: 2,
+    message: {
+      message_id: 1,
+      date: 1,
+      chat: { id: -100, type: "supergroup" },
+      from: { id: 42, is_bot: false },
+      photo: [{ file_id: "photo" }],
+      iva_parts: [
+        {
+          message_id: 1,
+          date: 1,
+          chat: { id: -100, type: "supergroup" },
+          from: { id: 42, is_bot: false },
+          photo: [{ file_id: "photo" }],
+        },
+        {
+          message_id: 2,
+          date: 1,
+          chat: { id: -100, type: "supergroup" },
+          from: { id: 42, is_bot: false },
+          text,
+        },
+      ],
+    },
+  });
+
+  assert.equal(shouldQueueBusyUpdate(collected("@my_bot see album"), options), true);
+  assert.equal(shouldQueueBusyUpdate(collected("/task save album"), options), true);
+  assert.equal(shouldQueueBusyUpdate(collected("unaddressed caption"), options), false);
+  const malformed = collected("unaddressed caption");
+  malformed.message.iva_parts.splice(1, 0, null, "broken");
+  assert.doesNotThrow(() => shouldQueueBusyUpdate(malformed, options));
+  assert.equal(shouldQueueBusyUpdate(malformed, options), false);
+});
+
 test("group routing validates exact Telegram entities across Unicode and malformed input", () => {
   const options = { allowedUserIds: new Set(["42"]), botUsername: "my_bot" };
   const group = (text, entities) => ({
