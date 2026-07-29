@@ -5,6 +5,10 @@ import { readFileSync } from "node:fs";
 const readSkill = (name) =>
   readFileSync(new URL(`../agent/skills/${name}.md`, import.meta.url), "utf8");
 
+const instructions = readFileSync(
+  new URL("../agent/instructions.md", import.meta.url),
+  "utf8",
+);
 const workspace = readSkill("google-workspace");
 const create = readSkill("google-calendar-create");
 const reschedule = readSkill("google-calendar-reschedule");
@@ -20,6 +24,10 @@ test("Google Workspace routes Calendar writes to focused skills", () => {
   ]) {
     assert.ok(workspace.includes("`" + name + "`"));
   }
+
+  assert.match(instructions, /Вывод — структурированный\s+JSON/s);
+  assert.match(instructions, /для записи в Calendar — указанный\s+там сценарный скилл/s);
+  assert.match(instructions, /код выхода 2.*подключению ключа/s);
 });
 
 test("Google Calendar policy creates one event with explicit reminders", () => {
@@ -41,7 +49,19 @@ test("Google Calendar policy covers event boundaries and sensitive data", () => 
   assert.match(create, /end\.date.*следующий день/s);
   assert.match(create, /физический адрес в `location`/);
   assert.match(create, /Проверяй.*чувствительн/s);
+  assert.match(create, /категории и маскированные\s+идентификаторы/s);
   assert.match(create, /явное подтверждение/);
+});
+
+test("Google Calendar creation preserves safety order and request boundaries", () => {
+  const dryRun = create.indexOf("insert` с `--dry-run`");
+  const confirmation = create.indexOf("запроси явное подтверждение", dryRun);
+  const liveInsert = create.indexOf("запрос в рабочем режиме", confirmation);
+
+  assert.ok(dryRun >= 0 && dryRun < confirmation && confirmation < liveInsert);
+  assert.match(create, /`sendUpdates` в `--params` рядом с `calendarId`/);
+  assert.match(create, /в `--json` передавай ресурс\s+события/s);
+  assert.match(create, /`nextPageToken`.*`pageToken`.*последней страницы/s);
 });
 
 test("focused Calendar skills preserve action-specific safety", () => {
@@ -51,19 +71,41 @@ test("focused Calendar skills preserve action-specific safety", () => {
   assert.match(update, /полного объекта напоминаний/);
   assert.match(update, /полный итоговый объект/);
   assert.match(update, /sendUpdates/);
+  assert.match(update, /родительское событие по `recurringEventId`/);
+  assert.match(update, /полный итоговый массив/);
   assert.match(remove, /один экземпляр или вся серия/);
+  assert.match(remove, /ID экземпляра как `eventId`/);
   assert.match(remove, /явное подтверждение/);
+
+  for (const skill of [reschedule, update, remove]) {
+    assert.match(skill, /sendUpdates.*`--params`/s);
+  }
 });
 
 test("mutating existing Calendar events checks for concurrent changes", () => {
   for (const skill of [reschedule, update, remove]) {
-    assert.match(skill, /сравни `etag`/);
+    assert.match(skill, /сравни `etag`.*При совпадении/s);
   }
+});
+
+test("multi-step Calendar moves define partial-failure recovery", () => {
+  assert.match(reschedule, /Первая ошибка завершает\s+последовательность/s);
+  assert.match(reschedule, /выполненные и ожидающие шаги/);
+  assert.match(reschedule, /компенсацию выполненного patch/);
+  assert.match(reschedule, /events move`.*через `--params`/s);
 });
 
 test("focused Calendar skills use affirmative instructions", () => {
   const negativeInstruction =
-    /(^|[\s.,:;!?()])(?:не|ни|нельзя|никогда|запрещено|без)(?=$|[\s.,:;!?()])/iu;
+    /(?<!\p{L})(?:не|ни|нельзя|никогда|запрещено|без)(?!\p{L})/iu;
+
+  for (const fixture of ["—не", "«ни»", "**без**", "`никогда`", "(запрещено)"]) {
+    assert.match(fixture, negativeInstruction);
+  }
+
+  for (const fixture of ["небо", "нитка", "бездна", "никогдашний"]) {
+    assert.doesNotMatch(fixture, negativeInstruction);
+  }
 
   for (const skill of [create, reschedule, update, remove]) {
     assert.doesNotMatch(skill, negativeInstruction);
