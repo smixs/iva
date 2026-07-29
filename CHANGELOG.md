@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- 📸 **Альбомы и разрезанные сообщения — один ход** (#80) — Telegram-мост собирает последовательные части от одного отправителя в одном чате/топике после тихого окна (800 мс, 1500 мс для альбомов), а очередь хранит весь burst одним элементом. `TELEGRAM_COLLECT_QUIET_MS=0` возвращает прежний passthrough; offset сохраняется при буферизации, поэтому аварийная остановка в тихом окне может потерять один текущий in-memory burst.
+
 ## [0.3.5] - 2026-07-28
 
 Fix: busy Telegram messages survive restarts, configuration changes roll back safely, and slow or truncated input is visible.
