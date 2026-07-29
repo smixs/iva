@@ -13,6 +13,7 @@ Iva is a personal agent that lives on your own server and works in your Telegram
 - Tired of paying for Perplexity — research with links to sources, done by Iva.
 - A photo of a business card → a contact card with what you agreed on.
 - A Gmail reply and a calendar invite sent without opening the laptop.
+- "Put the follow-ups from this meeting into my Google Tasks list and set their due dates" — a task list you can keep using in Google Tasks.
 - A bedtime story for your daughter — and tomorrow Iva remembers where the plot left off.
 
 ## For business owners
@@ -30,6 +31,8 @@ Iva is a personal agent that lives on your own server and works in your Telegram
 **🔎 Background checks.** Before a deal, Iva gathers what open sources say about the company and the people across the table.
 
 **📮 Mail and calendar.** Gmail, meetings with invites — straight from the chat. Ask "what's in the inbox?" and she tells you what actually needs a reply.
+
+**✅ Google Tasks.** Ask Iva to show task lists, create and organize tasks, set due dates, mark work done, or clean up completed items. Your tasks stay in Google Tasks and remain available in its apps.
 
 ## For specialists
 

@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseAuthChallenge, extractCallbackQuery } from "./gws-auth.mjs";
+import { GOOGLE_WORKSPACE_SERVICES, parseAuthChallenge, extractCallbackQuery } from "./gws-auth.mjs";
+
+test("Google OAuth requests every Workspace service supported by IVA", () => {
+  assert.equal(GOOGLE_WORKSPACE_SERVICES, "gmail,calendar,drive,sheets,docs,tasks");
+});
 
 test("parseAuthChallenge extracts the Google URL and loopback port", () => {
   const log = [

@@ -117,7 +117,7 @@ export default {
     }
     // ok
     return {
-      text: `${head}\n\n${T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive.")}`,
+      text: `${head}\n\n${T("✅ Google account connected. Services: Gmail, Calendar, Drive, Sheets, Docs, Tasks.", "✅ Google-аккаунт подключён. Сервисы: Gmail, Календарь, Drive, Таблицы, Документы, Tasks.")}`,
       rows: [checkRow, ctx.backRow(PARENT)],
     };
   },
@@ -279,7 +279,7 @@ export default {
       if ((await authStatus()) === "ok") {
         return ctx.flows.screen(
           st,
-          T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive."),
+          T("✅ Google account connected. Services: Gmail, Calendar, Drive, Sheets, Docs, Tasks.", "✅ Google-аккаунт подключён. Сервисы: Gmail, Календарь, Drive, Таблицы, Документы, Tasks."),
           [ctx.backRow(PARENT)],
         );
       }

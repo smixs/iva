@@ -56,6 +56,7 @@ export function extractCallbackQuery(input) {
 // `#!/usr/bin/env node` shebang cannot find node. Resolve gws next to the running node and inject
 // that dir into the child PATH so both are found.
 const NODE_BIN_DIR = dirname(process.execPath);
+export const GOOGLE_WORKSPACE_SERVICES = "gmail,calendar,drive,sheets,docs,tasks";
 
 export function gwsBin() {
   const p = join(NODE_BIN_DIR, "gws");
@@ -72,7 +73,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Start `gws auth login` detached, capturing stdout to a temp log. Poll the log until gws prints
 // the consent URL + loopback port, then return { pid, port, url, logPath }. Returns null if gws
 // never printed the challenge (died early / timed out) — the child is killed in that case.
-export async function startAuth({ services = "gmail,calendar,drive", timeoutMs = 6000 } = {}) {
+export async function startAuth({ services = GOOGLE_WORKSPACE_SERVICES, timeoutMs = 6000 } = {}) {
   const logPath = join(tmpdir(), `iva-gws-auth-${process.pid}-${Date.now()}.log`);
   const fd = openSync(logPath, "a");
   let child;
