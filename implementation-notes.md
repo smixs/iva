@@ -1,5 +1,17 @@
 # Implementation notes
 
+## Telegram stale-run reaper (#85 / #87 / #91)
+
+- Each polling pass scans only per-chat records in `data/run-status.d`; the legacy
+  whole-map remains read-only compatibility state.
+- A stale `running` record is retired with a generation and timestamp CAS. A refresh
+  or terminal event that wins the per-chat lock makes the reaper skip all side effects.
+- The reaper calls Eve's scoped Telegram reset route only to release the recorded
+  continuation token. It preserves the durable queue and all vault and daily state.
+- Any chat present in the queue drain's in-memory gate is skipped for that pass. After
+  a successful CAS, reset, notification, and working-message cleanup are isolated so
+  one failed best-effort operation cannot stop the polling loop.
+
 ## Explicit inbound truncation (IVA-013 / #59)
 
 - `sanitizeInbound()` keeps the 50,000-character safety cap, applies it on
