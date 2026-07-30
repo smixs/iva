@@ -1,5 +1,28 @@
 # Implementation notes
 
+## Telegram direct-delivery acceptance (#87 / #91)
+
+- Every bridge-originated message update, including reply-to-bot bypasses and the
+  memory-distillation synthetic, carries an authored receipt through
+  `/eve/v1/telegram/accepted`. HTTP 204 is success only with a `turn` or `handled`
+  acceptance header. Callback queries remain on `/eve/v1/telegram`: the authored
+  acceptance wrapper observes `onMessage` and `send()`, not `onCallbackQuery`.
+- Acceptance HTTP 503 means the authored webhook finished without a successful Eve
+  dispatch. It uses the existing bounded-drop retry count even though an ordinary
+  503 remains a transient unbounded retry. Authentication and route failures keep
+  their long-lived configuration retry, while other server failures keep the normal
+  transient policy. A missing acceptance header and an explicit acceptance timeout
+  also use bounded-drop handling.
+- Direct delivery intentionally supplies no short client timeout. The acceptance
+  handler waits for the real turn start, which may be slower than the durable drain's
+  five-second fairness budget. Queue timeouts retain the on-disk head for a later pass
+  and do not run direct-ingress cleanup.
+- A definitive direct failure compares the current run status with the generation
+  seen before delivery. Only a newer, session-less early ingress whose timestamp falls
+  inside that attempt is changed to idle, using a CAS over generation, update time and
+  ingress ID. Each failed retry cleans its own working status, while the chat receives
+  one retry-or-`/new` notice for the whole direct delivery.
+
 ## Telegram stale-run reaper (#85 / #87 / #91)
 
 - Each polling pass scans only per-chat records in `data/run-status.d`; the legacy
