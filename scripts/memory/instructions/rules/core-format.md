@@ -11,8 +11,8 @@ file the model never has to search for.
 ## Hard rules
 
 1. **Char cap ≈ 1200** (~300 tokens). On overflow → **consolidate, never grow**: merge, shorten,
-   drop the least useful line. `20-core.ts` truncates past the cap and `doctor.ts` alarms — but the
-   nightly rollup is responsible for keeping it under the cap.
+   drop the least useful line. The nightly rollup verifies the resulting file; `doctor.ts`
+   deterministically clamps any remaining overflow without touching pointers.
 2. **Only durable facts.** Identity, standing preferences, and ≤3 active goals. Anything a web
    search would surface, anything stale within ~7 days, any task state → does NOT belong here.
 3. **Who writes it:** the nightly `rollup.ts daily` job (full rewrite from the day + existing CORE),

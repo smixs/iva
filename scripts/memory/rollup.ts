@@ -10,6 +10,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } fr
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client, type SessionState } from "eve/client";
+import { CORE_CAP } from "../lib/core-cap.mjs";
 import { notificationChat } from "../lib/notification-chat.mjs";
 import { sendTelegramHtml } from "../lib/telegram-send.mjs";
 
@@ -104,7 +105,7 @@ function buildPrompt(p: Period, now: string): string {
         `and to the raw transcript daily/${yesterday}.md. ` +
         `Then update ${VAULT}/CORE.md per the ${INSTRUCTIONS}/rules/core-format.md rule: refresh permanent ` +
         `facts about the user, preferences, active goals (≤3), and the pointer to the last day (${yesterday}); ` +
-        `keep it ≤~1200 characters — compress on overflow, don't bloat. ` +
+        `keep it ≤~${CORE_CAP} characters — compress on overflow, don't bloat. ` +
         `Separately, reflect on the day's interactions: for each notable exchange judge the outcome — ` +
         `useful, dead_end, or corrected (user corrected you, asked again, or was dissatisfied). ` +
         `When a corrected/dead_end outcome reveals a REPEATABLE behavioral lesson (not a one-off fix), ` +
@@ -220,6 +221,36 @@ saveSession(session.state, sessionCreatedAt);
 if (result.status === "failed" || !result.message) {
   console.error(`rollup ${period}: agent returned no report (status=${result.status})`);
   process.exit(1);
+}
+
+// Daily is the only rollup that updates CORE. Verify the actual file, not just the turn
+// status: one same-session correction is allowed, then fail loudly and leave doctor as
+// the deterministic 05:00 backstop.
+if (period === "daily") {
+  const corePath = join(VAULT, "CORE.md");
+  let core = readFileSync(corePath, "utf8");
+  if (core.length > CORE_CAP) {
+    const oldLength = core.length;
+    console.error(
+      `rollup daily: CORE.md still exceeds the cap (${oldLength}/${CORE_CAP}); requesting one correction`,
+    );
+    const correction = await session.send(
+      `Re-open ${corePath}: it is ${oldLength} characters, above the hard ${CORE_CAP}-character cap. ` +
+        "Compress it now per the core-format rule. Preserve every heading and the Pointers/Указатели " +
+        "section; remove stale Preferences/Предпочтения first. Do not return until the file itself is within the cap.",
+    );
+    await correction.result();
+    saveSession(session.state, sessionCreatedAt);
+    core = readFileSync(corePath, "utf8");
+    if (core.length > CORE_CAP) {
+      console.error(
+        `rollup daily: CORE.md remains over cap after one correction (${core.length}/${CORE_CAP}); ` +
+          "doctor will clamp it at 05:00",
+      );
+      process.exit(1);
+    }
+    console.log(`rollup daily: CORE.md compressed ${oldLength} → ${core.length} chars`);
+  }
 }
 
 console.log(`rollup ${period} (${today}):\n${result.message}`);

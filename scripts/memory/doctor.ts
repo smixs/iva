@@ -8,10 +8,12 @@
 // Guards: no git-remote/credentials → alert admin on Telegram (gh auth login + git remote),
 // push is skipped. Health score drop → alert on Telegram. Plain Node orchestration.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CORE_CAP } from "../lib/core-cap.mjs";
 import { notificationChat } from "../lib/notification-chat.mjs";
+import { clampCore } from "./core-clamp.mjs";
 
 const VAULT = resolve(process.env.ASSISTANT_VAULT_DIR ?? "vault");
 // The autograph code lives in THIS repo, not in the vault: the vault is user data only.
@@ -135,15 +137,32 @@ if (failures.length) {
 }
 
 // ── 1b. CORE guard: the memory core must stay small (always-on floor stays flat) ──
-// 20-core.ts truncates on the fly, but a bloated CORE.md signals the nightly rollup did not shrink the core.
-const CORE_CAP = 1200;
+// This runs before git add/commit below, so a repaired CORE is included in the nightly backup.
 const corePath = resolve(VAULT, "CORE.md");
 if (existsSync(corePath)) {
-  const coreLen = readFileSync(corePath, "utf8").length;
-  if (coreLen > CORE_CAP) {
+  const oldCore = readFileSync(corePath, "utf8");
+  if (oldCore.length > CORE_CAP) {
+    const newCore = clampCore(oldCore);
+    const tmp = `${corePath}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      writeFileSync(tmp, newCore, "utf8");
+      renameSync(tmp, corePath);
+    } catch (error) {
+      try {
+        rmSync(tmp, { force: true });
+      } catch {
+        /* preserve the original write/rename failure */
+      }
+      throw error;
+    }
+    console.warn(`doctor: CORE.md clamped ${oldCore.length} → ${newCore.length} chars (cap ${CORE_CAP})`);
+    const protectedOverflow =
+      newCore.length > CORE_CAP
+        ? " Protected headings, pointers or unknown sections still exceed the cap."
+        : "";
     await telegram(
-      `CORE.md is bloated: ${coreLen}/${CORE_CAP} chars (${today}). ` +
-        `The nightly rollup should shrink the core per scripts/memory/instructions/rules/core-format.md.`,
+      `CORE.md exceeded its ${CORE_CAP}-char cap (${today}); doctor clamped it ` +
+        `${oldCore.length} → ${newCore.length} chars. Pointers were preserved.${protectedOverflow}`,
     );
   }
 }

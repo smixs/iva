@@ -1,14 +1,15 @@
 import { defineDynamic, defineInstructions } from "eve/instructions";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CORE_CAP } from "../../scripts/lib/core-cap.mjs";
+import { clampCore } from "../../scripts/memory/core-clamp.mjs";
 
 // Динамическая инструкция: каждый турн инжектит «ядро памяти» (vault/CORE.md) в системный
 // промпт — кто пользователь, постоянные предпочтения, активные цели, указатели. Это always-on
 // RAM памяти (аналог core memory у MemGPT): маленькое, переживает компактацию (инструкции —
 // не часть сжимаемой истории диалога). Пишет ядро ночной rollup; живой чат правит его только
-// на явное «запомни …». Самодостаточна — только eve + node fs/path (гоча eve 0.11.4).
+// на явное «запомни …». Clamp чистый и общий с ночным doctor.
 const VAULT = process.env.ASSISTANT_VAULT_DIR ?? "vault";
-const MAX_CHARS = 1200; // жёсткий лимит ядра (~300 токенов) — держим always-on пол плоским.
 
 function coreMarkdown(): string {
   let core: string;
@@ -18,9 +19,8 @@ function coreMarkdown(): string {
     return ""; // нет файла (vault не инициализирован) — молча ничего не инжектим.
   }
   if (!core) return "";
-  if (core.length > MAX_CHARS) {
-    core = core.slice(0, MAX_CHARS) + "\n…(ядро усечено — ночной rollup ужмёт)";
-  }
+  // Тот же section-aware backstop, что у doctor: указатели нельзя отрезать слепым slice.
+  if (core.length > CORE_CAP) core = clampCore(core);
   return `## Ядро памяти (CORE) — кто пользователь и что в работе\n${core}`;
 }
 
