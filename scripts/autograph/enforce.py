@@ -21,6 +21,9 @@ from common import (
     collect_duplicate_groups, collapse_repeated_description, cap_description, DESC_CAP
 )
 
+ENFORCE_MAX_FILE_BYTES = 10 * 1024 * 1024
+# cleanup.py owns bounded-memory repair; enforce only handles ordinary-sized cards.
+
 
 def enforce(vault_dir: Path, schema: dict, apply=False, verbose=False):
     node_types = schema['node_types']
@@ -30,16 +33,23 @@ def enforce(vault_dir: Path, schema: dict, apply=False, verbose=False):
 
     stats = {
         'total': 0, 'valid': 0, 'fixed': 0, 'needs_review': 0,
-        'no_fm': 0, 'fixes': defaultdict(int), 'review_items': []
+        'no_fm': 0, 'skipped_oversize': 0,
+        'fixes': defaultdict(int), 'review_items': []
     }
+    eligible_files = []
     for md in walk_vault(vault_dir):
         rp = rel_path(md, vault_dir)
         stats['total'] += 1
 
         try:
+            if md.stat().st_size > ENFORCE_MAX_FILE_BYTES:
+                stats['skipped_oversize'] += 1
+                print(f"  WARNING: skipping oversized file: {rp}")
+                continue
             content = md.read_text(errors='replace')
         except Exception:
             continue
+        eligible_files.append(md)
 
         fields, body, orig_lines = parse_frontmatter(content)
         if fields is None:
@@ -165,7 +175,8 @@ def enforce(vault_dir: Path, schema: dict, apply=False, verbose=False):
         if not changed and not issues:
             stats['valid'] += 1
 
-    dupes = collect_duplicate_groups(vault_dir, schema)
+    dupes = (collect_duplicate_groups(vault_dir, schema, files=eligible_files)
+             if eligible_files else {})
     return stats, dupes
 
 
@@ -211,6 +222,7 @@ def main():
     print(f"  Auto-fixed:      {stats['fixed']}")
     print(f"  Needs review:    {stats['needs_review']}")
     print(f"  No frontmatter:  {stats['no_fm']}")
+    print(f"  Oversize skipped:{stats['skipped_oversize']:>4}")
     print(f"\n  Fixes:")
     for k, v in sorted(stats['fixes'].items(), key=lambda x: -x[1]):
         print(f"    {k}: {v}")
@@ -233,6 +245,7 @@ def main():
     out.write_text(json.dumps({
         'score': score, 'total': stats['total'], 'valid': stats['valid'],
         'fixed': stats['fixed'], 'review': stats['needs_review'],
+        'skipped_oversize': stats['skipped_oversize'],
         'duplicates': len(dupes), 'mode': mode,
         'fixes': dict(stats['fixes']),
     }, indent=2))
