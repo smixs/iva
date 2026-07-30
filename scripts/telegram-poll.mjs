@@ -105,6 +105,18 @@ const ACCEPTANCE_ROUTE = `${HOST}${TELEGRAM_ACCEPTANCE_ROUTE}`;
 const RESET_ROUTE = `${ROUTE}/reset`;
 const API = `https://api.telegram.org/bot${TOKEN}`;
 const OFFSET_FILE = join(DATA_DIR, "telegram-offset.json");
+// Acceptance returns 204 only after the turn starts. Ninety seconds is deliberately
+// generous so no legitimate start should hit the deadline, while a wedged eve cannot
+// block the bridge's single polling loop forever.
+const configuredDirectAcceptanceTimeoutMs = Number(
+  process.env.TELEGRAM_DIRECT_ACCEPTANCE_TIMEOUT_MS,
+);
+const DIRECT_ACCEPTANCE_TIMEOUT_MS =
+  Number.isInteger(configuredDirectAcceptanceTimeoutMs) &&
+  configuredDirectAcceptanceTimeoutMs > 0 &&
+  configuredDirectAcceptanceTimeoutMs <= 4_294_967_295
+    ? configuredDirectAcceptanceTimeoutMs
+    : 90_000;
 // Pause between updates of the SAME chat: we give eve time to park the turn and register
 // the continuation hook, otherwise a burst starts a second run on the same token → HookConflictError.
 const SETTLE_MS = Number(process.env.TELEGRAM_POLL_SETTLE_MS ?? 1500);
@@ -246,14 +258,36 @@ const DROP_ATTEMPTS = 30;
 async function deliver(
   update,
   {
-    route = ROUTE,
+    route: requestedRoute,
     acceptedStatus,
-    queueReceipt = false,
+    queueReceipt: requestedQueueReceipt,
     retry = true,
+    retryAcceptanceTimeout = retry,
     timeoutMs,
+    onAcceptanceFailure,
   } = {},
 ) {
+  // The authored acceptance wrapper observes onMessage/send(), but not
+  // onCallbackQuery. Message updates therefore use the stronger route by default,
+  // while genuine and synthetic callbacks keep the original webhook path.
+  const route =
+    requestedRoute ??
+    (update?.message && !update?.callback_query ? ACCEPTANCE_ROUTE : ROUTE);
+  const expectsAcceptance =
+    acceptedStatus !== undefined || route === ACCEPTANCE_ROUTE;
+  const expectedStatus =
+    acceptedStatus ?? (expectsAcceptance ? 204 : undefined);
+  const queueReceipt =
+    requestedQueueReceipt ?? (expectsAcceptance && Boolean(update?.message));
   const outgoing = queueReceipt ? addTelegramQueueReceipt(update) : update;
+  const reportAcceptanceFailure = async (details) => {
+    if (!onAcceptanceFailure) return;
+    try {
+      await onAcceptanceFailure(details);
+    } catch (error) {
+      log("deliver: direct acceptance failure cleanup failed:", error.message);
+    }
+  };
   for (let attempt = 1; ; attempt++) {
     let wait = Math.min(15000, 1000 * attempt);
     try {
@@ -266,32 +300,54 @@ async function deliver(
         body: JSON.stringify(outgoing),
         ...(timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
       });
-      if (res.ok && (acceptedStatus === undefined || res.status === acceptedStatus)) {
-        return queueReceipt && res.headers.get(TELEGRAM_ACCEPTANCE_KIND_HEADER) === "handled"
-          ? "handled"
-          : true;
+      const acceptanceKind = expectsAcceptance
+        ? res.headers.get(TELEGRAM_ACCEPTANCE_KIND_HEADER)
+        : null;
+      if (
+        res.ok &&
+        (expectedStatus === undefined || res.status === expectedStatus) &&
+        (
+          !expectsAcceptance ||
+          acceptanceKind === "turn" ||
+          acceptanceKind === "handled"
+        )
+      ) {
+        return acceptanceKind === "handled" ? "handled" : true;
       }
       if (res.ok) {
+        if (expectsAcceptance) {
+          await reportAcceptanceFailure({
+            attempt,
+            kind: "protocol",
+            status: res.status,
+          });
+        }
         if (!retry) {
           log(
-            `deliver: acceptance route replied ${res.status}, expected ${acceptedStatus}; queue head retained`,
+            `deliver: acceptance route replied ${res.status} without a valid acceptance receipt; queue head retained`,
           );
           return false;
         }
-        log(
-          `deliver: acceptance route replied ${res.status}, expected ${acceptedStatus} (attempt ${attempt}) — retrying`,
-        );
-        await sleep(wait);
-        continue;
       }
-      const cls = classifyDeliverStatus(res.status);
+      if (expectsAcceptance && res.status === 503) {
+        await reportAcceptanceFailure({
+          attempt,
+          kind: "dispatch",
+          status: res.status,
+        });
+      }
+      const cls = classifyDeliverStatus(res.status, {
+        acceptance: expectsAcceptance,
+      });
       if (!retry) {
         log(`deliver: eve replied ${res.status}; queue head retained for a later pass`);
         return false;
       }
       if (cls === "drop") {
         if (attempt < DROP_ATTEMPTS) {
-          log(`deliver: eve replied ${res.status} (attempt ${attempt}/${DROP_ATTEMPTS}) — retrying (may be transient)`);
+          log(
+            `deliver: eve replied ${res.status} (attempt ${attempt}/${DROP_ATTEMPTS}) — retrying (may be transient)`,
+          );
           await sleep(wait);
           continue;
         }
@@ -309,8 +365,40 @@ async function deliver(
         log(`deliver: eve replied ${res.status} (attempt ${attempt}) — retrying`);
       }
     } catch (e) {
+      const acceptanceTimeout =
+        expectsAcceptance &&
+        (e?.name === "TimeoutError" || e?.name === "AbortError");
+      if (acceptanceTimeout) {
+        await reportAcceptanceFailure({
+          attempt,
+          kind: "timeout",
+          status: "timeout",
+        });
+      }
       if (!retry) {
         log(`deliver: eve unavailable (${e.message}); queue head retained for a later pass`);
+        return false;
+      }
+      if (acceptanceTimeout && !retryAcceptanceTimeout) {
+        // A timed-out POST may still start later. Re-posting it could duplicate the
+        // turn, so direct acceptance timeouts are definitive and never retried.
+        log(
+          `deliver: direct acceptance timed out after ${timeoutMs}ms; rejecting update ${update.update_id} without retry`,
+        );
+        return false;
+      }
+      if (acceptanceTimeout) {
+        if (attempt < DROP_ATTEMPTS) {
+          log(
+            `deliver: acceptance timed out (attempt ${attempt}/${DROP_ATTEMPTS}) — retrying`,
+          );
+          await sleep(wait);
+          continue;
+        }
+        log(
+          `deliver: acceptance timed out ${DROP_ATTEMPTS} times — DROPPING update ${update.update_id}`,
+        );
+        await notifyDeliverProblem("drop", "timeout");
         return false;
       }
       log(`deliver: eve unavailable (${e.message}, attempt ${attempt}) — waiting for server`);
@@ -597,6 +685,67 @@ async function deleteStaleWorkingMessage(chatKey, messageId) {
   });
 }
 
+async function clearFailedDirectIngress(
+  chatKey,
+  {
+    baselineGeneration,
+    startedAt,
+    statusImpl = getChatStatus,
+    setStatusIfImpl = setChatStatusIf,
+    deleteMessageImpl = deleteStaleWorkingMessage,
+    now = Date.now,
+  },
+) {
+  const current = statusImpl(chatKey);
+  const observedAt = now();
+  if (
+    current?.status !== "running" ||
+    current.sessionId !== undefined ||
+    typeof current.ingressId !== "string" ||
+    !Number.isFinite(current.ingressAt) ||
+    current.ingressAt < startedAt ||
+    current.ingressAt > observedAt ||
+    statusGeneration(current) <= baselineGeneration
+  ) {
+    return false;
+  }
+
+  const cleared = setStatusIfImpl(
+    chatKey,
+    {
+      status: "running",
+      generation: current.generation,
+      updatedAt: current.updatedAt,
+      ingressId: current.ingressId,
+      sessionId: undefined,
+    },
+    {
+      status: "idle",
+      sessionId: null,
+      turnId: null,
+      statusMessageId: null,
+      ingressId: null,
+      ingressAt: null,
+      statusAt: null,
+      turnAt: null,
+      firstOutputAt: null,
+      latencyLogged: null,
+      wasCancelled: null,
+      resetAt: observedAt,
+    },
+  );
+  if (!cleared) return false;
+
+  if (current.statusMessageId !== undefined && current.statusMessageId !== null) {
+    try {
+      await deleteMessageImpl(chatKey, current.statusMessageId);
+    } catch {
+      // Failed-attempt working messages are removed best-effort, like stale ones.
+    }
+  }
+  return true;
+}
+
 export async function reapStaleRuns({
   listStatusesImpl = listChatStatuses,
   setStatusIfImpl = setChatStatusIf,
@@ -725,6 +874,73 @@ async function acknowledgeQueued(update, count) {
   }).catch((error) => log("queue status failed:", error.message));
 }
 
+async function deliverDirectUpdate(
+  update,
+  {
+    key = chatKey(update),
+    deliverImpl = pacedDeliver,
+    statusImpl = getChatStatus,
+    setStatusIfImpl = setChatStatusIf,
+    sendFailureImpl = sendStaleRunNotice,
+    deleteMessageImpl = deleteStaleWorkingMessage,
+    now = Date.now,
+    trImpl = tr,
+    logImpl = log,
+  } = {},
+) {
+  // The acceptance wrapper does not cover callback_query dispatch. Keeping this
+  // call option-free also preserves the old webhook path for real callbacks and
+  // the synthetic /stop callback.
+  if (!update.message || key === null) {
+    const accepted = await deliverImpl(update);
+    return accepted ? "delivered" : "rejected";
+  }
+
+  const startedAt = now();
+  const baselineGeneration = statusGeneration(statusImpl(key));
+  let acceptanceFailureReported = false;
+  let failureNotified = false;
+  const onAcceptanceFailure = async () => {
+    acceptanceFailureReported = true;
+    try {
+      await clearFailedDirectIngress(key, {
+        baselineGeneration,
+        startedAt,
+        statusImpl,
+        setStatusIfImpl,
+        deleteMessageImpl,
+        now,
+      });
+    } catch (error) {
+      logImpl(`direct delivery status cleanup failed for ${key}:`, error.message);
+    }
+
+    if (failureNotified) return;
+    failureNotified = true;
+    try {
+      await sendFailureImpl(
+        key,
+        trImpl(
+          "Couldn't process the message - repeat it or use /new",
+          "Не получилось обработать сообщение - повтори или /new",
+        ),
+      );
+    } catch (error) {
+      logImpl(`direct delivery notification failed for ${key}:`, error.message);
+    }
+  };
+
+  const accepted = await deliverImpl(update, {
+    onAcceptanceFailure,
+    timeoutMs: DIRECT_ACCEPTANCE_TIMEOUT_MS,
+    retryAcceptanceTimeout: false,
+  });
+  // Defensive fallback for injected/custom deliverers and for a pacing deadline
+  // that expires before fetch starts.
+  if (!accepted && !acceptanceFailureReported) await onAcceptanceFailure();
+  return accepted ? "delivered" : "rejected";
+}
+
 export async function routeMessageUpdate(
   update,
   {
@@ -738,6 +954,12 @@ export async function routeMessageUpdate(
     enqueueImpl = (key, candidate) => enqueueQueueFile(QUEUE_FILE, key, candidate),
     acknowledgeImpl = acknowledgeQueued,
     deliverImpl = pacedDeliver,
+    statusImpl = getChatStatus,
+    setStatusIfImpl = setChatStatusIf,
+    sendFailureImpl = sendStaleRunNotice,
+    deleteMessageImpl = deleteStaleWorkingMessage,
+    now = Date.now,
+    trImpl = tr,
     allowedUserIds = ALLOWED,
     botUsername = BOT_USERNAME,
     logImpl = log,
@@ -762,8 +984,17 @@ export async function routeMessageUpdate(
     }
   }
 
-  const accepted = await deliverImpl(update);
-  return accepted ? "delivered" : "rejected";
+  return deliverDirectUpdate(update, {
+    key,
+    deliverImpl,
+    statusImpl,
+    setStatusIfImpl,
+    sendFailureImpl,
+    deleteMessageImpl,
+    now,
+    trImpl,
+    logImpl,
+  });
 }
 
 export async function drainReadyQueueHeads({
@@ -1521,7 +1752,9 @@ const menu = createMenu({
     root: ROOT,
     sc,
     reply,
-    deliver: pacedDeliver, // синтетический deliver дистилляции обязан пейситься, как главный цикл
+    // Синтетическая дистилляция делит acceptance, пейсинг и уборку failed-ingress
+    // с обычной прямой доставкой, но намеренно не проходит busy-time FIFO.
+    deliver: (update) => deliverDirectUpdate(update).then((result) => result === "delivered"),
     log,
     allowed: ALLOWED,
     handleModelCmd,
@@ -1796,7 +2029,7 @@ async function handleControl(update) {
 async function main() {
   if (!TOKEN) throw new Error("no TELEGRAM_BOT_TOKEN in .env — nothing to poll");
   if (!SECRET) throw new Error("no TELEGRAM_WEBHOOK_SECRET_TOKEN — the channel won't accept updates");
-  log(`telegram-poll start → ${ROUTE}`);
+  log(`telegram-poll start → messages ${ACCEPTANCE_ROUTE}; callbacks ${ROUTE}`);
   await removeStaleUpdateJobs();
   // Upgrade the old {chatKey: string[]} queue atomically before polling. A failed
   // migration stops the bridge, so Telegram retains new updates until the old bytes

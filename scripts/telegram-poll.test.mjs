@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 // telegram-poll.mjs reads env at import and guards its poll loop behind a direct-execution check,
 // so importing it here is side-effect-free. A dummy token keeps the API base a harmless string.
 process.env.TELEGRAM_BOT_TOKEN ??= "test:token";
+delete process.env.TELEGRAM_DIRECT_ACCEPTANCE_TIMEOUT_MS;
 const {
   readCappedStream,
   handleAwaitNonText,
@@ -65,6 +66,12 @@ function routeDeps(overrides = {}) {
     enqueueImpl: async () => ({ count: 1 }),
     acknowledgeImpl: async () => {},
     deliverImpl: async () => true,
+    statusImpl: () => null,
+    setStatusIfImpl: () => null,
+    sendFailureImpl: async () => {},
+    deleteMessageImpl: async () => {},
+    now: () => 1_000,
+    trImpl: (_en, ru) => ru,
     logImpl: () => {},
     ...overrides,
   };
@@ -111,6 +118,251 @@ test("routeMessageUpdate sends one idle update through paced delivery", async ()
 
   assert.equal(result, "delivered");
   assert.equal(delivered, 1);
+});
+
+test("a direct acceptance timeout is rejected after one cleanup and notification", async () => {
+  let current = {
+    status: "idle",
+    generation: 4,
+    updatedAt: 900,
+  };
+  const calls = [];
+  let deliveries = 0;
+  let timeoutReports = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    statusImpl: () => current,
+    setStatusIfImpl: (key, expected, patch) => {
+      calls.push(["cas", key, expected, patch]);
+      current = {
+        ...current,
+        ...patch,
+        generation: current.generation + 1,
+        updatedAt: 1_000,
+      };
+      for (const field of Object.keys(current)) {
+        if (current[field] === null) delete current[field];
+      }
+      return current;
+    },
+    sendFailureImpl: async (key, text) => calls.push(["send", key, text]),
+    deleteMessageImpl: async (key, messageId) =>
+      calls.push(["delete", key, messageId]),
+    deliverImpl: async (_update, options) => {
+      deliveries++;
+      assert.equal(options.timeoutMs, 90_000);
+      assert.equal(options.retryAcceptanceTimeout, false);
+      current = {
+        status: "running",
+        generation: 5,
+        updatedAt: 1_000,
+        ingressId: "timed-out-ingress",
+        ingressAt: 1_000,
+        statusMessageId: 73,
+      };
+      timeoutReports++;
+      await options.onAcceptanceFailure({
+        kind: "timeout",
+        status: "timeout",
+        attempt: 1,
+      });
+      return false;
+    },
+  }));
+
+  assert.equal(result, "rejected");
+  assert.equal(deliveries, 1);
+  assert.equal(timeoutReports, 1);
+  assert.equal(calls.filter(([kind]) => kind === "cas").length, 1);
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "delete"),
+    [["delete", "1:", 73]],
+  );
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "send"),
+    [["send", "1:", "Не получилось обработать сообщение - повтори или /new"]],
+  );
+});
+
+test("direct acceptance failures clear each matching ingress and notify the chat once", async () => {
+  let current = {
+    status: "idle",
+    generation: 4,
+    updatedAt: 900,
+  };
+  const calls = [];
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    statusImpl: () => current,
+    setStatusIfImpl: (key, expected, patch) => {
+      calls.push(["cas", key, expected, patch]);
+      current = {
+        ...current,
+        ...patch,
+        generation: current.generation + 1,
+        updatedAt: 1_000,
+      };
+      for (const field of Object.keys(current)) {
+        if (current[field] === null) delete current[field];
+      }
+      return current;
+    },
+    sendFailureImpl: async (key, text) => calls.push(["send", key, text]),
+    deleteMessageImpl: async (key, messageId) =>
+      calls.push(["delete", key, messageId]),
+    deliverImpl: async (_update, { onAcceptanceFailure }) => {
+      current = {
+        status: "running",
+        generation: 5,
+        updatedAt: 1_000,
+        ingressId: "ingress-first",
+        ingressAt: 1_000,
+        statusMessageId: 71,
+      };
+      await onAcceptanceFailure({ kind: "dispatch", status: 503, attempt: 1 });
+      assert.equal(current.status, "idle", "the first failed ingress resets immediately");
+
+      current = {
+        status: "running",
+        generation: 7,
+        updatedAt: 1_000,
+        ingressId: "ingress-retry",
+        ingressAt: 1_000,
+        statusMessageId: 72,
+      };
+      await onAcceptanceFailure({ kind: "dispatch", status: 503, attempt: 2 });
+      assert.equal(current.status, "idle", "a failed bounded retry is cleaned too");
+      return false;
+    },
+  }));
+
+  assert.equal(result, "rejected");
+  assert.equal(calls.filter(([kind]) => kind === "cas").length, 2);
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "delete"),
+    [
+      ["delete", "1:", 71],
+      ["delete", "1:", 72],
+    ],
+  );
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === "send"),
+    [["send", "1:", "Не получилось обработать сообщение - повтори или /new"]],
+  );
+});
+
+test("reply-to-bot bypass clears its failed early status before delivery returns", async () => {
+  let current = {
+    status: "running",
+    generation: 7,
+    updatedAt: 1_900,
+    sessionId: "orphaned-session",
+  };
+  let resetBeforeReturn = false;
+  let notifications = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    replyToBotImpl: () => true,
+    loadQueueImpl: async () => {
+      throw new Error("reply-to-bot must bypass the busy queue");
+    },
+    now: () => 2_000,
+    statusImpl: () => current,
+    setStatusIfImpl: (_key, _expected, patch) => {
+      current = {
+        ...current,
+        ...patch,
+        generation: current.generation + 1,
+        updatedAt: 2_000,
+      };
+      for (const field of Object.keys(current)) {
+        if (current[field] === null) delete current[field];
+      }
+      return current;
+    },
+    sendFailureImpl: async () => {
+      notifications++;
+    },
+    deliverImpl: async (_update, { onAcceptanceFailure }) => {
+      current = {
+        status: "running",
+        generation: 8,
+        updatedAt: 2_000,
+        ingressId: "reply-ingress",
+        ingressAt: 2_000,
+        statusMessageId: 81,
+      };
+      await onAcceptanceFailure({ kind: "dispatch", status: 503, attempt: 1 });
+      resetBeforeReturn = current.status === "idle";
+      return false;
+    },
+  }));
+
+  assert.equal(result, "rejected");
+  assert.equal(resetBeforeReturn, true);
+  assert.equal(notifications, 1);
+});
+
+test("direct failure cleanup never clobbers a turn that acquired a session", async () => {
+  let current = {
+    status: "idle",
+    generation: 2,
+    updatedAt: 900,
+  };
+  let casCalls = 0;
+  let notifications = 0;
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    statusImpl: () => current,
+    setStatusIfImpl: () => {
+      casCalls++;
+      return null;
+    },
+    sendFailureImpl: async () => {
+      notifications++;
+    },
+    deliverImpl: async (_update, { onAcceptanceFailure }) => {
+      current = {
+        status: "running",
+        generation: 3,
+        updatedAt: 1_000,
+        ingressId: "adopted-ingress",
+        ingressAt: 1_000,
+        sessionId: "live-session",
+        turnId: "live-turn",
+      };
+      await onAcceptanceFailure({ kind: "timeout", status: "timeout", attempt: 1 });
+      return false;
+    },
+  }));
+
+  assert.equal(result, "rejected");
+  assert.equal(casCalls, 0);
+  assert.equal(current.sessionId, "live-session");
+  assert.equal(notifications, 1);
+});
+
+test("callback_query delivery keeps the original option-free webhook path", async () => {
+  const callbackUpdate = {
+    update_id: 11,
+    callback_query: {
+      id: "callback-11",
+      from: { id: 42, is_bot: false },
+      message: routedUpdate.message,
+      data: "iva_cancel",
+    },
+  };
+  let statusReads = 0;
+  const result = await routeMessageUpdate(callbackUpdate, routeDeps({
+    statusImpl: () => {
+      statusReads++;
+      return null;
+    },
+    deliverImpl: async (update, options) => {
+      assert.equal(update, callbackUpdate);
+      assert.equal(options, undefined);
+      return true;
+    },
+  }));
+
+  assert.equal(result, "delivered");
+  assert.equal(statusReads, 0);
 });
 
 test("routeMessageUpdate reports enqueue failure without acknowledging", async () => {

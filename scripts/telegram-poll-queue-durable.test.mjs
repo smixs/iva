@@ -14,13 +14,27 @@ function makeDataDir(t, label) {
   return path;
 }
 
-function runHarness(mode, dataDir, fault = "none", { collectQuietMs = "0" } = {}) {
+function runHarness(
+  mode,
+  dataDir,
+  fault = "none",
+  { collectQuietMs = "0", directAcceptanceTimeoutMs } = {},
+) {
   const result = spawnSync(
     process.execPath,
     ["--experimental-test-module-mocks", HARNESS, mode, dataDir, fault],
     {
       cwd: ROOT,
-      env: { ...process.env, TELEGRAM_COLLECT_QUIET_MS: collectQuietMs },
+      env: {
+        ...process.env,
+        TELEGRAM_COLLECT_QUIET_MS: collectQuietMs,
+        ...(directAcceptanceTimeoutMs === undefined
+          ? {}
+          : {
+              TELEGRAM_DIRECT_ACCEPTANCE_TIMEOUT_MS:
+                directAcceptanceTimeoutMs,
+            }),
+      },
       encoding: "utf8",
       timeout: 10_000,
     },
@@ -199,4 +213,72 @@ test("busy FIFO routes private, group and forum-topic updates without absorbing 
   assert.equal(result.offset.offset, 105);
   assert.equal(result.reactions.length, 3);
   assert.equal(result.queueStatuses.length, 3);
+});
+
+test("an idle direct message uses one accepted POST and keeps offset semantics", (t) => {
+  const dataDir = makeDataDir(t, "direct-success");
+  const result = runHarness("direct-success", dataDir);
+
+  assert.equal(result.deliveries.length, 1);
+  assert.deepEqual(result.deliveryRoutes, ["/eve/v1/telegram/accepted"]);
+  assert.equal(result.deliveries[0].update_id, 101);
+  assert.equal(
+    typeof result.deliveries[0].message.iva_durable_queue_receipt,
+    "string",
+  );
+  assert.deepEqual(result.offset, { offset: 102, delivered: 101 });
+});
+
+test("a direct acceptance 503 resets immediately, notifies once, then retries", (t) => {
+  const dataDir = makeDataDir(t, "direct-retry");
+  const result = runHarness("direct-retry", dataDir);
+
+  assert.deepEqual(result.deliveryRoutes, [
+    "/eve/v1/telegram/accepted",
+    "/eve/v1/telegram/accepted",
+  ]);
+  assert.equal(result.statusBeforeRetry.status, "idle");
+  assert.equal(result.statusBeforeRetry.ingressId, undefined);
+  assert.deepEqual(result.deletedMessages, [{ chat_id: "1", message_id: 77 }]);
+  assert.deepEqual(
+    result.failureNotices.map(({ chat_id, text }) => [chat_id, text]),
+    [["1", "Couldn't process the message - repeat it or use /new"]],
+  );
+  assert.deepEqual(result.offset, { offset: 102, delivered: 101 });
+});
+
+test("a direct acceptance timeout rejects once and returns to Telegram polling", (t) => {
+  const dataDir = makeDataDir(t, "direct-timeout");
+  const result = runHarness("direct-timeout", dataDir, "none", {
+    directAcceptanceTimeoutMs: "25",
+  });
+
+  assert.deepEqual(
+    result.deliveryRoutes,
+    ["/eve/v1/telegram/accepted"],
+    "a timed-out POST must never be repeated because it may still start later",
+  );
+  assert.deepEqual(result.deletedMessages, [{ chat_id: "1", message_id: 78 }]);
+  assert.deepEqual(
+    result.failureNotices.map(({ chat_id, text }) => [chat_id, text]),
+    [["1", "Couldn't process the message - repeat it or use /new"]],
+  );
+  assert.equal(result.finalStatus.status, "idle");
+  assert.equal(result.finalStatus.ingressId, undefined);
+  assert.deepEqual(
+    result.requestedOffsets,
+    [100, 102],
+    "the rejected result must let the main loop advance and poll again",
+  );
+  assert.deepEqual(result.offset, { offset: 102 });
+});
+
+test("callback_query delivery stays on the original webhook route", (t) => {
+  const dataDir = makeDataDir(t, "callback");
+  const result = runHarness("callback", dataDir);
+
+  assert.equal(result.deliveries.length, 1);
+  assert.deepEqual(result.deliveryRoutes, ["/eve/v1/telegram"]);
+  assert.equal(result.deliveries[0].callback_query.id, "foreign-callback-101");
+  assert.deepEqual(result.offset, { offset: 102, delivered: 101 });
 });

@@ -49,6 +49,13 @@ if (
     sessionId: null,
     turnId: null,
   });
+} else if (mode === "direct-retry") {
+  status.setChatStatus(privateKey, {
+    status: "idle",
+    continuationToken: "1::",
+    sessionId: null,
+    turnId: null,
+  });
 }
 if (mode === "group-noise" || mode === "routing") {
   status.setChatStatus(groupKey, {
@@ -122,6 +129,26 @@ const privateUpdate = (updateId, text, chatId = 1) => ({
     text,
   },
 });
+const replyToBotUpdate = (updateId, text) => {
+  const update = privateUpdate(updateId, text);
+  update.message.reply_to_message = {
+    message_id: updateId - 1,
+    date: 1,
+    chat: update.message.chat,
+    from: { id: 999, is_bot: true, first_name: "Iva" },
+    text: "previous bot reply",
+  };
+  return update;
+};
+const callbackUpdate = {
+  update_id: 101,
+  callback_query: {
+    id: "foreign-callback-101",
+    from: { id: 42, is_bot: false, first_name: "Owner" },
+    message: privateUpdate(100, "button owner").message,
+    data: "foreign_callback",
+  },
+};
 const groupNoiseUpdate = {
   update_id: 102,
   message: {
@@ -148,8 +175,12 @@ const deliveries = [];
 const deliveryRoutes = [];
 const reactions = [];
 const queueStatuses = [];
+const failureNotices = [];
+const deletedMessages = [];
 const requestedOffsets = [];
 let getUpdatesCalls = 0;
+let directAcceptanceAttempts = 0;
+let statusBeforeRetry = null;
 
 const jsonResponse = (payload, statusCode = 200) => ({
   ok: statusCode >= 200 && statusCode < 300,
@@ -180,9 +211,13 @@ function finish() {
       deliveryRoutes,
       reactions,
       queueStatuses,
+      failureNotices,
+      deletedMessages,
       requestedOffsets,
       queueDirSyncAttempts,
       queueDirSyncSuccesses,
+      statusBeforeRetry,
+      finalStatus: status.getChatStatus(privateKey),
       offset: readJson(offsetFile, null),
       queue: readJson(queueFile, {}),
     }),
@@ -213,7 +248,8 @@ if (mode === "fair-drain") {
 globalThis.fetch = async (url, options = {}) => {
   const target = String(url);
   if (target.startsWith("http://iva-red.invalid/")) {
-    deliveryRoutes.push(new URL(target).pathname);
+    const deliveryRoute = new URL(target).pathname;
+    deliveryRoutes.push(deliveryRoute);
     const delivery = JSON.parse(options.body);
     deliveries.push(delivery);
     if (
@@ -223,9 +259,62 @@ globalThis.fetch = async (url, options = {}) => {
     ) {
       return jsonResponse({}, 503);
     }
+    if (mode === "direct-retry" && deliveryRoute === "/eve/v1/telegram/accepted") {
+      directAcceptanceAttempts++;
+      if (directAcceptanceAttempts === 1) {
+        status.setChatStatus(privateKey, {
+          status: "running",
+          ingressId: "11111111111111111111111111111111",
+          ingressAt: Date.now(),
+          statusMessageId: 77,
+          sessionId: null,
+          turnId: null,
+        });
+        return jsonResponse({}, 503);
+      }
+      statusBeforeRetry = status.getChatStatus(privateKey);
+      status.setChatStatus(privateKey, {
+        status: "running",
+        sessionId: `session-${delivery.update_id}`,
+        turnId: `turn-${delivery.update_id}`,
+      });
+    }
+    if (mode === "direct-timeout" && deliveryRoute === "/eve/v1/telegram/accepted") {
+      directAcceptanceAttempts++;
+      status.setChatStatus(privateKey, {
+        status: "running",
+        ingressId: "22222222222222222222222222222222",
+        ingressAt: Date.now(),
+        statusMessageId: 78,
+        sessionId: null,
+        turnId: null,
+      });
+      return new Promise((_resolve, reject) => {
+        // AbortSignal.timeout() uses an unref'd timer; keep this subprocess alive
+        // long enough for the mocked hung request to observe the real abort signal.
+        const keepAlive = setTimeout(
+          () => reject(new Error("direct acceptance abort was not observed")),
+          Number(process.env.TELEGRAM_DIRECT_ACCEPTANCE_TIMEOUT_MS) + 1_000,
+        );
+        const rejectTimeout = () => {
+          clearTimeout(keepAlive);
+          reject(
+            options.signal?.reason ??
+              Object.assign(new Error("direct acceptance timed out"), {
+                name: "TimeoutError",
+              }),
+          );
+        };
+        if (options.signal?.aborted) {
+          rejectTimeout();
+          return;
+        }
+        options.signal?.addEventListener("abort", rejectTimeout, { once: true });
+      });
+    }
     if (
       (mode === "auto-drain" || mode === "collect-burst" || mode === "restart-drain") &&
-      new URL(target).pathname === "/eve/v1/telegram/accepted"
+      deliveryRoute === "/eve/v1/telegram/accepted"
     ) {
       status.setChatStatus(privateKey, {
         status: "running",
@@ -235,7 +324,7 @@ globalThis.fetch = async (url, options = {}) => {
     }
     return jsonResponse(
       {},
-      new URL(target).pathname === "/eve/v1/telegram/accepted" ? 204 : 200,
+      deliveryRoute === "/eve/v1/telegram/accepted" ? 204 : 200,
     );
   }
 
@@ -337,6 +426,29 @@ globalThis.fetch = async (url, options = {}) => {
       }
       finish();
     }
+    if (
+      mode === "direct-success" ||
+      mode === "direct-retry" ||
+      mode === "direct-timeout"
+    ) {
+      if (getUpdatesCalls === 1) {
+        return jsonResponse({
+          ok: true,
+          result: [
+            mode === "direct-retry"
+              ? replyToBotUpdate(101, "direct reply")
+              : privateUpdate(101, "direct message"),
+          ],
+        });
+      }
+      finish();
+    }
+    if (mode === "callback") {
+      if (getUpdatesCalls === 1) {
+        return jsonResponse({ ok: true, result: [callbackUpdate] });
+      }
+      finish();
+    }
     if (mode === "fair-drain") finish();
     throw new Error(`unknown harness mode: ${mode}`);
   }
@@ -344,6 +456,13 @@ globalThis.fetch = async (url, options = {}) => {
   if (method === "sendMessage" && /^Queued \(\d+\)/.test(body.text || "")) {
     queueStatuses.push(body);
   }
+  if (
+    method === "sendMessage" &&
+    body.text === "Couldn't process the message - repeat it or use /new"
+  ) {
+    failureNotices.push(body);
+  }
+  if (method === "deleteMessage") deletedMessages.push(body);
   return jsonResponse({ ok: true, result: { message_id: 1 } });
 };
 
