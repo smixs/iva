@@ -1,7 +1,10 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { notificationChat } from "./notification-chat.mjs";
 import { resolveUpdateTarget } from "./update-channel.mjs";
+
+export { notificationChat };
 
 function git(root, args) {
   return new Promise((resolve) => {
@@ -88,12 +91,6 @@ export function updateOffer(localVersion, remoteVersion, locale = "en") {
       ]],
     },
   };
-}
-
-export function notificationChat(env = process.env) {
-  const digest = String(env.TELEGRAM_DIGEST_CHAT_ID ?? "").trim();
-  if (digest) return digest;
-  return String(env.TELEGRAM_ALLOWED_USER_IDS ?? "").split(/[,\s]+/).map((id) => id.trim()).find(Boolean) ?? "";
 }
 
 export async function sendUpdateOffer({ token, chatId, offer, fetchImpl = fetch } = {}) {

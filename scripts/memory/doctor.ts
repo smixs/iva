@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { notificationChat } from "../lib/notification-chat.mjs";
 
 const VAULT = resolve(process.env.ASSISTANT_VAULT_DIR ?? "vault");
 // The autograph code lives in THIS repo, not in the vault: the vault is user data only.
@@ -18,7 +19,7 @@ const VAULT = resolve(process.env.ASSISTANT_VAULT_DIR ?? "vault");
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPTS = resolve(ROOT, "scripts/autograph");
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT = process.env.TELEGRAM_DIGEST_CHAT_ID; // admin chat
+const CHAT = notificationChat(); // admin chat
 const TZ = process.env.ASSISTANT_TIMEZONE ?? process.env.TZ ?? "UTC";
 
 if (!existsSync(VAULT)) {

@@ -10,6 +10,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } fr
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client, type SessionState } from "eve/client";
+import { notificationChat } from "../lib/notification-chat.mjs";
 import { sendTelegramHtml } from "../lib/telegram-send.mjs";
 
 type Period = "daily" | "weekly" | "monthly" | "yearly";
@@ -27,7 +28,7 @@ const PORT = process.env.IVA_PORT ?? "8723";
 const HOST = process.env.ASSISTANT_HOST ?? `http://127.0.0.1:${PORT}`;
 const BEARER = process.env.ASSISTANT_BEARER; // needed if the prod eve channel requires auth
 const BOT = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT = process.env.TELEGRAM_DIGEST_CHAT_ID;
+const CHAT = notificationChat();
 const VAULT = process.env.ASSISTANT_VAULT_DIR ?? "vault";
 const TZ = process.env.ASSISTANT_TIMEZONE ?? process.env.TZ ?? "UTC";
 // Format rules and the dbrain-processor prompts live in the repo, not in the vault: they
