@@ -19,3 +19,10 @@ test("постоянные клиентские ошибки дропаются:
     assert.equal(classifyDeliverStatus(s), "drop", `status ${s}`);
   }
 });
+
+test("503 acceptance-роута — ограниченный dispatch-дроп, а не вечный 5xx-ретрай", () => {
+  assert.equal(classifyDeliverStatus(503), "retry");
+  assert.equal(classifyDeliverStatus(503, { acceptance: true }), "drop");
+  assert.equal(classifyDeliverStatus(502, { acceptance: true }), "retry");
+  assert.equal(classifyDeliverStatus(401, { acceptance: true }), "config");
+});

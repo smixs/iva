@@ -10,7 +10,12 @@
 const RETRYABLE_4XX = new Set([408, 425, 429]);
 const CONFIG_4XX = new Set([401, 403, 404]);
 
-export function classifyDeliverStatus(status) {
+export function classifyDeliverStatus(status, { acceptance = false } = {}) {
+  // The authored acceptance route reserves 503 for a completed webhook dispatch
+  // which did not reach Eve send(). Retrying may still bridge a short startup race,
+  // but it must use the bounded drop policy rather than pinning the polling loop
+  // forever like an ordinary transient 5xx.
+  if (acceptance && status === 503) return "drop";
   if (status >= 500 || RETRYABLE_4XX.has(status)) return "retry";
   if (CONFIG_4XX.has(status)) return "config";
   return "drop";
