@@ -12,6 +12,12 @@ import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSy
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CORE_CAP } from "../lib/core-cap.mjs";
+import {
+  classifyGitPushError,
+  formatMegabytes,
+  recordSkippedOversize,
+  scanOversizeWorkingTreeFiles,
+} from "../lib/memory-maintenance.mjs";
 import { notificationChat } from "../lib/notification-chat.mjs";
 import { clampCore } from "./core-clamp.mjs";
 
@@ -178,6 +184,37 @@ if (history.length >= 2) {
 }
 
 // ── 3. Git commit & push ──
+// Check the complete working-tree snapshot before staging anything. If even one file is
+// unsafe, skip the whole commit: a partial commit would make the nightly backup look complete
+// while silently omitting vault data.
+let oversized: Array<{ path: string; size: number }>;
+try {
+  oversized = scanOversizeWorkingTreeFiles({
+    vaultPath: VAULT,
+    runGit: (args: string[]) => run("git", args),
+  });
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const message =
+    `vault: не удалось проверить размеры файлов перед git add (${detail}); ` +
+    "ночной коммит отложен, чтобы не повредить историю.";
+  console.warn(`doctor: ${message}`);
+  await telegram(message);
+  process.exit(1);
+}
+
+if (oversized.length) {
+  recordSkippedOversize(resolve(VAULT, ".graph/enforce-report.json"), oversized.length);
+  const lines = oversized.map(
+    ({ path, size }) =>
+      `файл ${path} (${formatMegabytes(size)}) превышает лимит GitHub; ` +
+      "ночной cleanup должен его ужать, коммит отложен",
+  );
+  for (const line of lines) console.warn(`doctor: ${line}`);
+  await telegram(`vault:\n${lines.join("\n")}`);
+  process.exit(1);
+}
+
 // Auto-provision a private backup remote via the already-authorized gh CLI instead of
 // nagging nightly: only alert when gh itself can't help (not installed / not logged in).
 function ensureRemote(): string {
@@ -218,11 +255,18 @@ run("git", ["add", "-A"]);
 run("git", ["commit", "-m", `chore: memory ${today}`]);
 const push = run("git", ["push"]);
 if (push.status !== 0) {
-  await telegram(
-    "vault: git push failed (no credentials?). On the server run `gh auth login` " +
-      `and verify remote access (cd ${VAULT} && git push).`,
-  );
-  console.error("doctor: git push failed");
+  const error = classifyGitPushError(push.stderr);
+  const message =
+    error.kind === "oversize"
+      ? "vault: git push отклонён: история уже содержит слишком большой blob. " +
+        "Нужна ручная очистка: `git checkout --orphan vault-clean` — сверни историю vault " +
+        "в один чистый коммит и запушь с `--force`."
+      : error.kind === "auth"
+        ? "vault: git push failed (no credentials?). On the server run `gh auth login` " +
+          `and verify remote access (cd ${VAULT} && git push).`
+        : `vault: git push failed: ${error.firstLine}`;
+  console.warn(`doctor: ${message}`);
+  await telegram(message);
   process.exit(1);
 }
 
