@@ -136,6 +136,20 @@ test("алиас в тип вне тула (daily) по-прежнему отк�
   }));
 });
 
+test("description длиннее 500 символов отклоняется с просьбой сократить", () => {
+  assert.throws(
+    () =>
+      writeCard.inputSchema.parse({
+        type: "note",
+        title: "Слишком длинное описание",
+        description: "x".repeat(501),
+        tags: ["note"],
+        body: "тело",
+      }),
+    /максимум 500 символов; сократи/,
+  );
+});
+
 test("tags и domain квотируются, если содержат YAML-спецсимволы", async () => {
   const res = await call({
     type: "note",

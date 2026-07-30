@@ -24,6 +24,7 @@ const CARD_TYPE_DIR: Record<string, string> = {
   idea: "ideas",
   note: "notes",
 };
+const DESC_CAP = 500;
 
 // Схема vault'а: корень vault'а → легаси `.claude`-путь (vault'ы до 0.3.3) → дефолт из репо.
 function schemaPath(): string {
@@ -99,7 +100,14 @@ export default defineTool({
       .preprocess(normalizeType, z.enum(CARD_TYPES))
       .describe("Тип карточки (строго из списка; алиасы вроде person/company → contact применяются автоматически)"),
     title: z.string().min(1).describe("Имя/заголовок сущности (пойдёт в имя файла и заголовок)"),
-    description: z.string().min(1).describe("Краткая выжимка что/зачем (1–2 фразы, для поиска)"),
+    description: z
+      .string()
+      .min(1)
+      .max(
+        DESC_CAP,
+        `description слишком длинное: максимум ${DESC_CAP} символов; сократи его и повтори вызов`,
+      )
+      .describe("Краткая выжимка что/зачем (1–2 фразы, для поиска)"),
     tags: z.array(z.string()).min(1).max(6).describe("2–5 тегов, lowercase-kebab"),
     status: z.string().optional().describe("Статус жизненного цикла (валидируется по типу)"),
     domain: z.string().optional().describe("Домен (work/personal/…), опционально"),
