@@ -195,7 +195,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str, list[str]]:
 
     for line in raw_lines:
         stripped = line.strip()
-        indented = line.startswith('  ') or line.startswith('\t')
+        indented = line.startswith((' ', '\t'))
 
         # Multi-line continuation
         if multiline_key and indented:
@@ -287,13 +287,15 @@ def write_frontmatter(fields: dict, original_lines: list[str]) -> str:
 
     for line in original_lines:
         stripped = line.strip()
-        indented = line.startswith('  ') or line.startswith('\t')
+        indented = line.startswith((' ', '\t'))
         if skip_continuation and indented:
             continue  # fold/literal continuation of a replaced key: skip by indent, not colon
 
         if not stripped or stripped.startswith('#'):
-            skip_continuation = False
-            out.append(line)
+            # Blank/comment lines inside a replaced block belong to that block:
+            # keep skipping until the next frontmatter key.
+            if not skip_continuation:
+                out.append(line)
             continue
         if ':' not in stripped:
             if not skip_continuation:

@@ -503,6 +503,36 @@ def main():
              fm_b_rt.get('tags') == ['project', 'index', 'extra'],
              f"got: {fm_b_rt.get('tags')!r}")
 
+        # 1.15d parity with the TypeScript frontmatter dialect: a single
+        # leading space is enough to make a folded-scalar continuation.
+        single_space_fm = ("---\ndescription: >-\n"
+                           " line one\n"
+                           " line two\n"
+                           "status: active\n---\n# Body\n")
+        fm_s, _, orig_s = parse_frontmatter(single_space_fm)
+        test("single-space fold parse: continuation joined",
+             fm_s.get('description') == 'line one line two'
+             and fm_s.get('status') == 'active',
+             f"got: {fm_s!r}")
+        rebuilt_s = write_frontmatter({'description': 'NEW'}, orig_s)
+        test("single-space fold rewrite: no stale continuation",
+             'line one' not in rebuilt_s and 'line two' not in rebuilt_s
+             and 'description: NEW' in rebuilt_s and 'status: active' in rebuilt_s,
+             f"got: {rebuilt_s!r}")
+
+        # 1.15e blank/comment lines inside a replaced folded block must not
+        # reset continuation skipping and resurrect the stale tail.
+        paragraph_lines = [
+            'type: contact', 'description: >-', '  first paragraph', '',
+            '# paragraph break', '  second paragraph', 'status: active',
+        ]
+        rebuilt_p = write_frontmatter({'description': 'new'}, paragraph_lines)
+        test("fold rewrite after blank/comment: no stale tail",
+             'first paragraph' not in rebuilt_p and 'second paragraph' not in rebuilt_p
+             and 'paragraph break' not in rebuilt_p
+             and 'description: new' in rebuilt_p and 'status: active' in rebuilt_p,
+             f"got: {rebuilt_p!r}")
+
         # 1.16 deterministic link resolver
         resolver_vault = tmp / 'resolver-vault'
         (resolver_vault / 'docs/cards').mkdir(parents=True, exist_ok=True)
@@ -727,6 +757,27 @@ def main():
         test("enforce remaps superseded when NOT in enum",
              'status: superseded' not in remapped and 'status: active' in remapped,
              remapped[:200])
+
+        # enforce must never read giant cards whole. A sparse file keeps the
+        # fixture cheap while exercising the stat guard and report wiring.
+        _schema_cache.clear()
+        oversize_vault = tmp / 'oversize-vault'
+        oversize_vault.mkdir(parents=True, exist_ok=True)
+        oversize_card = oversize_vault / 'giant-card.md'
+        with oversize_card.open('wb') as f:
+            f.seek(10 * 1024 * 1024)
+            f.write(b'\0')
+        code, out, err = run([py, str(SCRIPTS_DIR / 'enforce.py'),
+                              str(oversize_vault), str(schema_path)])
+        oversize_report = json.loads(
+            (oversize_vault / '.graph' / 'enforce-report.json').read_text()
+        )
+        test("enforce skips oversized file with warning",
+             code == 0 and 'giant-card.md' in out and 'WARNING' in out,
+             f"code={code}, out={out[:300]!r}, err={err[:300]!r}")
+        test("enforce report counts oversized skip",
+             oversize_report.get('skipped_oversize') == 1,
+             f"got: {oversize_report!r}")
 
         # --- discover.py ---
         print("\n--- discover.py ---")
