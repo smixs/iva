@@ -56,7 +56,7 @@ What Iva knows about *you* is memory, not code — that's `CORE.md` in the vault
 ## Local development
 
 ```bash
-npm ci        # postinstall applies patches/eve+0.27.8.patch
+npm ci        # postinstall applies patches/eve+0.27.13.patch
 npm run dev   # eve dev TUI, server on http://127.0.0.1:2000
 npm exec -- eve dev --no-ui --logs all   # headless
 ```
@@ -70,8 +70,8 @@ const res = await session.send("Add a task: buy coffee, high priority.");
 console.log((await res.result()).message);
 ```
 
-One gotcha — Iva runs eve **0.27.8**:
+One gotcha — Iva runs eve **0.27.13**:
 
-- 🩹 **patch-package** — `patches/eve+0.27.8.patch` makes deterministic model-call errors (invalid prompt, unknown tool) fail fast instead of parking a poisoned session; upstream still classifies them as recoverable in 0.27.8. If you bump Eve, regenerate the patch (re-apply the edit to `node_modules/eve/dist/src/harness/model-call-error.js`, then `npx patch-package eve`) or drop it only after the targeted classification test passes against upstream.
+- 🩹 **patch-package** — `patches/eve+0.27.13.patch` makes deterministic model-call errors (invalid prompt, unknown tool) fail fast instead of parking a poisoned session; upstream still classifies them as recoverable in 0.27.13. If you bump Eve, regenerate the patch (re-apply the edit to `node_modules/eve/dist/src/harness/model-call-error.js`, then `npx patch-package eve`) or drop it only after the targeted classification test passes against upstream.
 
-The Eve 0.11.4 schedule crash (`eve dev` dying when a schedule handler imported another authored module) is fixed in 0.27.8 — verified with a probe schedule. The repo still ships no `agent/schedules/*.ts`: on a VPS `defineSchedule` never fires anyway, systemd timers do that job ([deploy.md](./deploy.md)).
+The Eve 0.11.4 schedule crash (`eve dev` dying when a schedule handler imported another authored module) is fixed since 0.27.8 — verified with a probe schedule. The repo still ships no `agent/schedules/*.ts`: on a VPS `defineSchedule` never fires anyway, systemd timers do that job ([deploy.md](./deploy.md)).
