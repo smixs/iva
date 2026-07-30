@@ -18,6 +18,7 @@ import {
   type TelegramRawMedia,
   type TelegramRawMessage,
 } from "../lib/telegram-parts.js";
+import { humanizeProviderError } from "../lib/error-humanizer.js";
 // Состояние «идёт ли ход» — per-chat файлы data/run-status.d с мостом telegram-poll.mjs:
 // мост по ним буферизует входящие, канал хранит sessionId/turnId для отмены.
 import {
@@ -564,6 +565,47 @@ async function finishStatus(
   return true;
 }
 
+const FAILURE_NOTIFICATION_TTL_MS = 60_000;
+const failureNotifications = new Map<string, number>();
+
+function pruneFailureNotifications(now = Date.now()): void {
+  for (const [sessionId, notifiedAt] of failureNotifications) {
+    if (now - notifiedAt >= FAILURE_NOTIFICATION_TTL_MS) {
+      failureNotifications.delete(sessionId);
+    }
+  }
+}
+
+function claimFailureNotification(sessionId: string, now = Date.now()): number | null {
+  pruneFailureNotifications(now);
+  const notifiedAt = failureNotifications.get(sessionId);
+  if (notifiedAt !== undefined && now - notifiedAt < FAILURE_NOTIFICATION_TTL_MS) {
+    return null;
+  }
+  failureNotifications.set(sessionId, now);
+  return now;
+}
+
+function releaseFailureNotification(sessionId: string, claim: number): void {
+  if (failureNotifications.get(sessionId) === claim) {
+    failureNotifications.delete(sessionId);
+  }
+}
+
+function extractFailureErrorId(details: unknown): string | undefined {
+  if (typeof details !== "object" || details === null || Array.isArray(details)) {
+    return undefined;
+  }
+  const errorId = (details as Record<string, unknown>).errorId;
+  return typeof errorId === "string" && errorId.length > 0 ? errorId : undefined;
+}
+
+function failureMessage(data: { message: string; details?: unknown }): string {
+  const text = humanizeProviderError(data);
+  const errorId = extractFailureErrorId(data.details);
+  return [tr(text.en, text.ru), ...(errorId ? ["", `Error id: ${errorId}`] : [])].join("\n");
+}
+
 const telegram = telegramChannel({
   botUsername: process.env.TELEGRAM_BOT_USERNAME ?? "my_bot",
   // Картинку/файл НЕ суём в запрос к модели (это и ломалось: octet-stream → reject, потом
@@ -754,17 +796,39 @@ const telegram = telegramChannel({
       }
       if (attemptedDelivery && allChunksDelivered) recordDelivery(true);
     },
-    // Ход упал (в т.ч. переполнение контекста / HookConflict) — даём пользователю escape.
-    async "turn.failed"(_data, channel, ctx) {
-      if (!(await finishStatus(channel, ctx.session.id, "failed"))) return;
+    // Ход упал: статус прибираем по CAS, но сообщение об ошибке от него не гейтим —
+    // позднее terminal-событие всё равно должно объяснить пользователю, что произошло.
+    async "turn.failed"(data, channel, ctx) {
       try {
-        await channel.telegram.sendMessage(
-          tr(
-            "The turn failed (the context may have overflowed). Commands: /new — start over, /restart — restart.",
-            "Ход не удался (возможно, переполнился контекст). Команды: /new — начать заново, /restart — перезапустить.",
-          ),
-        );
+        await finishStatus(channel, ctx.session.id, "failed");
       } catch {
+        /* run-status не прибрался — сообщение об ошибке всё равно отправляем */
+      }
+      const claim = claimFailureNotification(ctx.session.id);
+      if (claim === null) return;
+      try {
+        await channel.telegram.sendMessage(failureMessage(data));
+      } catch {
+        releaseFailureNotification(ctx.session.id, claim);
+        /* молча игнорируем сбой ответа */
+      }
+    },
+    // У terminal-сбоя eve следом за turn.failed шлёт session.failed без ctx.
+    // Повторно прибираем run-status по sessionId из payload и не дублируем уведомление.
+    async "session.failed"(data, channel) {
+      if (channel.telegram.chatId) {
+        try {
+          await finishStatus(channel, data.sessionId, "failed");
+        } catch {
+          /* best-effort: отсутствие chat-state не должно ломать уведомление */
+        }
+      }
+      const claim = claimFailureNotification(data.sessionId);
+      if (claim === null) return;
+      try {
+        await channel.telegram.sendMessage(failureMessage(data));
+      } catch {
+        releaseFailureNotification(data.sessionId, claim);
         /* молча игнорируем сбой ответа */
       }
     },
