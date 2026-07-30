@@ -1,5 +1,5 @@
 ---
-description: Работа с Google-сервисами через CLI `gws` (Google Workspace CLI) — Gmail, чтение Google Календаря, Drive, Таблицы, Документы, Chat и OAuth-подключение. Используй, когда просят почитать или отправить письмо, посмотреть календарь, найти или загрузить файл на Drive, прочитать или дополнить Google Таблицу либо Документ, подключить Google или устранить ошибку авторизации.
+description: Работа с Google-сервисами через CLI `gws` (Google Workspace CLI) — Gmail, Google Календарь, Drive, Таблицы, Документы, Chat. Используй, когда просят почитать/отправить письмо в Gmail, посмотреть/создать событие в календаре, найти/загрузить файл на Drive, прочитать/дописать Google Таблицу или Документ. Здесь же — пошаговое подключение (регистрация ключа), если `gws` ещё не авторизован. Триггеры — «проверь почту», «напиши письмо», «что у меня в календаре», «создай встречу», «загрузи на диск», «Google Таблица», «подключи Google».
 ---
 
 # Google Workspace (`gws`)
@@ -29,6 +29,26 @@ gws sheets +read --spreadsheet ID --range 'Sheet1!A1:C10'
 gws sheets +append --spreadsheet ID --values "Alice,95"
 gws docs +write --document ID --text "Абзац"
 gws workflow +weekly-digest                    # встречи недели + число непрочитанных
+```
+
+## События Google Calendar
+
+- Одной встрече, поездке или временному интервалу соответствует один объект события; несколько
+  оповещений передавай в `reminders.overrides` этого объекта.
+- Всегда передавай `reminders.useDefault: false` и полный массив `overrides`: до пяти значений с
+  методами `popup` или `email`, без одинаковых пар `method + minutes`.
+- Перед изменением или удалением повторяющегося события уточни: один экземпляр или вся серия.
+- Для события на весь день `end.date` указывает следующий день после последнего дня.
+
+```bash
+gws calendar events insert --params '{"calendarId":"primary"}' --json '{
+  "summary":"Созвон",
+  "start":{"dateTime":"2026-08-03T14:00:00+03:00"},
+  "end":{"dateTime":"2026-08-03T15:00:00+03:00"},
+  "reminders":{"useDefault":false,"overrides":[
+    {"method":"popup","minutes":10},{"method":"popup","minutes":60},{"method":"email","minutes":1440}
+  ]}
+}'
 ```
 
 Полный Discovery-доступ к любому методу API (когда хелпера нет):
