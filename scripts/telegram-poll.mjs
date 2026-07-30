@@ -36,8 +36,10 @@ import { inspectUpstream, markVersionNotified, updateOffer } from "./lib/update-
 import {
   getChatStatus,
   isRunning,
+  listChatStatuses,
   RUN_STALE_MS,
   setChatStatus,
+  setChatStatusIf,
 } from "./lib/run-status.mjs";
 import { classifyDeliverStatus } from "./lib/deliver-policy.mjs";
 import { alreadyDelivered, parseOffsetFile, serializeOffsetFile } from "./lib/offset-store.mjs";
@@ -497,6 +499,19 @@ const requestResetFromIntent = ({ continuationToken }) =>
     continuationToken,
   });
 
+export async function releaseScopedContinuation(
+  chatKey,
+  continuationToken,
+  { requestResetImpl = requestResetFromIntent } = {},
+) {
+  try {
+    await requestResetImpl({ chatKey, continuationToken });
+  } catch (error) {
+    error.resetPhase = "remote";
+    throw error;
+  }
+}
+
 export async function performScopedReset(
   chatKey,
   continuationToken,
@@ -518,9 +533,8 @@ export async function performScopedReset(
     }
   }
   try {
-    await requestResetImpl(intent);
+    await releaseScopedContinuation(chatKey, continuationToken, { requestResetImpl });
   } catch (error) {
-    error.resetPhase = "remote";
     throw error;
   }
   try {
@@ -552,6 +566,144 @@ export async function reconcileScopedResetIntents({
     await clearIntentImpl(intent.chatKey);
   }
   return intents.length;
+}
+
+function telegramTargetOf(chatKey) {
+  const separator = chatKey.indexOf(":");
+  if (separator <= 0) return null;
+  const chatId = chatKey.slice(0, separator);
+  if (!/^-?\d+$/.test(chatId)) return null;
+  const thread = chatKey.slice(separator + 1);
+  if (thread === "") return { chat_id: chatId };
+  if (!/^\d+$/.test(thread)) return null;
+  const messageThreadId = Number(thread);
+  if (!Number.isSafeInteger(messageThreadId) || messageThreadId <= 0) return null;
+  return { chat_id: chatId, message_thread_id: messageThreadId };
+}
+
+async function sendStaleRunNotice(chatKey, text) {
+  const target = telegramTargetOf(chatKey);
+  if (!target) throw new Error(`invalid Telegram chat key: ${chatKey}`);
+  const data = await tg("sendMessage", { ...target, text });
+  if (!data?.ok) throw new Error(data?.description || "sendMessage failed");
+}
+
+async function deleteStaleWorkingMessage(chatKey, messageId) {
+  const target = telegramTargetOf(chatKey);
+  if (!target) return;
+  await tg("deleteMessage", {
+    chat_id: target.chat_id,
+    message_id: messageId,
+  });
+}
+
+export async function reapStaleRuns({
+  listStatusesImpl = listChatStatuses,
+  setStatusIfImpl = setChatStatusIf,
+  resetImpl = releaseScopedContinuation,
+  sendImpl = sendStaleRunNotice,
+  deleteMessageImpl = deleteStaleWorkingMessage,
+  now = Date.now,
+  inFlight = queueInFlight,
+  staleMs = RUN_STALE_MS,
+  trImpl = tr,
+  logImpl = log,
+} = {}) {
+  const safeLog = (...args) => {
+    try {
+      logImpl(...args);
+    } catch {
+      // Обслуживание протухших ходов не должно останавливать polling loop.
+    }
+  };
+
+  let records;
+  try {
+    records = await listStatusesImpl();
+  } catch (error) {
+    safeLog("stale run scan failed:", error.message);
+    return 0;
+  }
+
+  let reaped = 0;
+  for (const record of records) {
+    const key = record?.chatKey;
+    const status = record?.status;
+    if (
+      typeof key !== "string" ||
+      status?.status !== "running" ||
+      now() - (status.updatedAt ?? 0) <= staleMs ||
+      inFlight.has(key)
+    ) {
+      continue;
+    }
+
+    let flipped;
+    const reapedAt = now();
+    try {
+      flipped = setStatusIfImpl(
+        key,
+        {
+          status: "running",
+          generation: status.generation,
+          updatedAt: status.updatedAt,
+        },
+        {
+          status: "idle",
+          sessionId: null,
+          turnId: null,
+          statusMessageId: null,
+          ingressId: null,
+          ingressAt: null,
+          statusAt: null,
+          turnAt: null,
+          firstOutputAt: null,
+          latencyLogged: null,
+          wasCancelled: null,
+          resetAt: reapedAt,
+        },
+      );
+    } catch (error) {
+      safeLog(`stale run CAS failed for ${key}:`, error.message);
+      continue;
+    }
+    if (!flipped) continue;
+    reaped++;
+
+    if (
+      typeof status.continuationToken === "string" &&
+      status.continuationToken.length > 0
+    ) {
+      try {
+        await resetImpl(key, status.continuationToken);
+      } catch (error) {
+        safeLog(`stale run reset failed for ${key}:`, error.message);
+      }
+    } else {
+      safeLog(`stale run ${key} has no continuation token`);
+    }
+
+    try {
+      await sendImpl(
+        key,
+        trImpl(
+          "The previous turn was interrupted - repeat your request or use /new",
+          "Предыдущий ход оборвался - повтори запрос или /new",
+        ),
+      );
+    } catch (error) {
+      safeLog(`stale run notification failed for ${key}:`, error.message);
+    }
+
+    if (status.statusMessageId !== undefined && status.statusMessageId !== null) {
+      try {
+        await deleteMessageImpl(key, status.statusMessageId);
+      } catch {
+        // Старое статус-сообщение удаляется best-effort.
+      }
+    }
+  }
+  return reaped;
 }
 
 async function acknowledgeQueued(update, count) {
@@ -1677,6 +1829,11 @@ async function main() {
   for (;;) {
     // One head per idle chat/topic per pass. While any queue remains, use a short
     // Telegram long-poll so terminal/stale run-status changes trigger drain quickly.
+    try {
+      await reapStaleRuns();
+    } catch (e) {
+      log("stale run reaper failed:", e.message);
+    }
     let pendingQueueCount = await drainReadyQueueHeads();
     let collectorWriteFailed = false;
     for (const update of collectorTakeExpired(messageCollector, Date.now())) {

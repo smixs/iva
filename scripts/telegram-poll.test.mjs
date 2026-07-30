@@ -13,6 +13,7 @@ const {
   selectWizardEffort,
   runWizardRequest,
   resolveThinkCatalogLoad,
+  reapStaleRuns,
   routeMessageUpdate,
   selectableWizardOptions,
   validateAndSaveWizard,
@@ -126,6 +127,174 @@ test("routeMessageUpdate reports enqueue failure without acknowledging", async (
 
   assert.equal(result, "enqueue-failed");
   assert.equal(acknowledged, 0);
+});
+
+const reaperNow = 2_000_000;
+const staleStatus = {
+  status: "running",
+  generation: 7,
+  updatedAt: reaperNow - 31_000,
+  continuationToken: "telegram:1::",
+  sessionId: "session-1",
+  turnId: "turn-1",
+  statusMessageId: 77,
+};
+
+function reaperDeps(statuses, overrides = {}) {
+  return {
+    listStatusesImpl: async () => statuses,
+    setStatusIfImpl: () => ({ status: "idle" }),
+    resetImpl: async () => {},
+    sendImpl: async () => {},
+    deleteMessageImpl: async () => {},
+    now: () => reaperNow,
+    inFlight: new Map(),
+    staleMs: 30_000,
+    trImpl: (_en, ru) => ru,
+    logImpl: () => {},
+    ...overrides,
+  };
+}
+
+test("reapStaleRuns flips one stale run, resets Eve, notifies, and removes working status", async () => {
+  const calls = [];
+  const reaped = await reapStaleRuns(reaperDeps(
+    [{ chatKey: "1:", status: staleStatus }],
+    {
+      setStatusIfImpl: (key, expected, patch) => {
+        calls.push(["cas", key, expected, patch]);
+        return { ...staleStatus, ...patch, generation: 8 };
+      },
+      resetImpl: async (key, token) => calls.push(["reset", key, token]),
+      sendImpl: async (key, text) => calls.push(["send", key, text]),
+      deleteMessageImpl: async (key, messageId) =>
+        calls.push(["delete", key, messageId]),
+    },
+  ));
+
+  assert.equal(reaped, 1);
+  assert.deepEqual(calls[0].slice(0, 3), [
+    "cas",
+    "1:",
+    { status: "running", generation: 7, updatedAt: reaperNow - 31_000 },
+  ]);
+  assert.equal(calls[0][3].status, "idle");
+  assert.equal(calls[0][3].resetAt, reaperNow);
+  assert.deepEqual(calls.slice(1), [
+    ["reset", "1:", "telegram:1::"],
+    ["send", "1:", "Предыдущий ход оборвался - повтори запрос или /new"],
+    ["delete", "1:", 77],
+  ]);
+});
+
+test("reapStaleRuns leaves a fresh running record untouched", async () => {
+  let sideEffects = 0;
+  const reaped = await reapStaleRuns(reaperDeps(
+    [{
+      chatKey: "1:",
+      status: { ...staleStatus, updatedAt: reaperNow - 30_000 },
+    }],
+    {
+      setStatusIfImpl: () => {
+        sideEffects++;
+        return { status: "idle" };
+      },
+    },
+  ));
+
+  assert.equal(reaped, 0);
+  assert.equal(sideEffects, 0);
+});
+
+test("reapStaleRuns leaves non-running statuses untouched", async () => {
+  let sideEffects = 0;
+  const reaped = await reapStaleRuns(reaperDeps(
+    [
+      { chatKey: "1:", status: { ...staleStatus, status: "idle" } },
+      { chatKey: "2:", status: { ...staleStatus, status: "failed" } },
+    ],
+    {
+      setStatusIfImpl: () => {
+        sideEffects++;
+        return { status: "idle" };
+      },
+    },
+  ));
+
+  assert.equal(reaped, 0);
+  assert.equal(sideEffects, 0);
+});
+
+test("reapStaleRuns stops after a CAS conflict", async () => {
+  let reset = 0;
+  let sent = 0;
+  const reaped = await reapStaleRuns(reaperDeps(
+    [{ chatKey: "1:", status: staleStatus }],
+    {
+      setStatusIfImpl: () => null,
+      resetImpl: async () => reset++,
+      sendImpl: async () => sent++,
+    },
+  ));
+
+  assert.equal(reaped, 0);
+  assert.equal(reset, 0);
+  assert.equal(sent, 0);
+});
+
+test("reapStaleRuns skips chats while their queue head is mid-drain", async () => {
+  let sideEffects = 0;
+  const reaped = await reapStaleRuns(reaperDeps(
+    [{ chatKey: "1:", status: staleStatus }],
+    {
+      inFlight: new Map([["1:", { state: "delivering" }]]),
+      setStatusIfImpl: () => {
+        sideEffects++;
+        return { status: "idle" };
+      },
+    },
+  ));
+
+  assert.equal(reaped, 0);
+  assert.equal(sideEffects, 0);
+});
+
+test("reapStaleRuns swallows and logs a notification failure", async () => {
+  const logs = [];
+  let deleted = 0;
+  const reaped = await reapStaleRuns(reaperDeps(
+    [{ chatKey: "1:", status: staleStatus }],
+    {
+      sendImpl: async () => {
+        throw new Error("Telegram unavailable");
+      },
+      deleteMessageImpl: async () => deleted++,
+      logImpl: (...args) => logs.push(args.join(" ")),
+    },
+  ));
+
+  assert.equal(reaped, 1);
+  assert.equal(deleted, 1);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /stale run notification failed for 1:: Telegram unavailable/);
+});
+
+test("a fresh message is delivered after its stale status is reaped", async () => {
+  let running = true;
+  await reapStaleRuns(reaperDeps(
+    [{ chatKey: "1:", status: staleStatus }],
+    {
+      setStatusIfImpl: () => {
+        running = false;
+        return { status: "idle" };
+      },
+    },
+  ));
+
+  const result = await routeMessageUpdate(routedUpdate, routeDeps({
+    runningImpl: () => running,
+  }));
+  assert.equal(result, "delivered");
 });
 
 test("readCappedStream reads a small body under the cap", async () => {
