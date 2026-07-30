@@ -28,6 +28,17 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ## What's New 🔥
 
+### 30.07.2026
+
+#### v0.3.6
+
+- 🩹 When a turn breaks, Iva frees the chat and says so - no more half-hour silence or manual /restart.
+- 💬 Provider errors are explained in plain words: limit with its reset time, balance, key, or a provider-side failure - instead of "context overflowed".
+- 🧠 The memory core no longer bloats - the nightly service keeps it within the cap without touching the important pointers.
+- 📣 Service alerts (nightly memory, backup) arrive without extra configuration.
+- 🛡️ The memory backup no longer breaks on huge files, and failures state their real cause.
+- ⚙️ The eve engine is updated - more resilient to provider stream drops.
+
 ### 29.07.2026
 
 - 🖼️ An album of photos with a caption, a forwarded post, or a long split message is understood as one message — one reply instead of several.
