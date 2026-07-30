@@ -69,36 +69,6 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 - 📝 Existing memory entries are preserved when updated.
 - 🔐 Personal files and settings are better protected.
 
-### 23.07.2026
-
-- **v0.3.0** 🎛 A control center in chat: nested `/menu` covers model & thinking, web search with in-chat key setup, interface language (instant ru/en switch — the whole interface is now bilingual), userbot and Google onboarding, crons, skills and a live status card. Plus a 🎭 **character test**: 10 button-driven questions, four axes, 16 archetypes — the portrait you accept becomes Iva's live persona from the next message, and a core-memory interview she distills into `CORE.md` herself
-- **v0.3.0** ⏹️ Control mid-turn: `/stop` (or the ⏹ button on the status message) interrupts a running turn right from chat, messages sent while Iva is busy queue up instead of vanishing, and the working-status message got an animated loader
-
-### 22.07.2026
-
-- **v0.2.6** ⬆️ Civilized updates: a quiet daily release check that spends zero model tokens, **Update / Later** buttons in Telegram, all progress in one animated message, phased update with rollback that preserves your edits — and legacy installs moved to a working update channel. Replies to `/restart` and `/update` now show the current model, and emotional venting no longer lands in your identity facts
-- **v0.2.6** 🧪 **Personal Telegram userbot (beta)** — read and send from your *own* account, not just the bot; onboarding fully in chat (QR, no terminal), with a server-enforced anti-ban guardrail (FloodWait compliance, randomized pacing, circuit-breaker). Opt-in, at your own risk
-
-### 15.07.2026
-
-- **v0.2.5** 🧾 Rich replies: tables, checklists, collapsible blocks and formulas render natively in Telegram (Bot API 10.1), with a graceful fallback for plain text
-
-### 09.07.2026
-
-- **v0.2.4** 📮 Google Workspace from chat: Gmail, Calendar, Drive, Sheets and Docs via the `gws` CLI — the installer sets it up, the key is registered right in the conversation. Plus an OpenRouter provider, and OpenRouter errors that tell the real reason instead of a misleading "needs function calling"
-
-### 06.07.2026
-
-- **v0.2.1-0.2.3** 🤖 Run Iva on your ChatGPT subscription (`MODEL_PROVIDER=codex`) — no separate API key; docs split into 10 focused pages with Russian mirrors and `llms.txt`
-
-### 04.07.2026
-
-- **v0.2.0** 🧠 Memory that finds things by meaning: BM25 + link-graph rerank in any language, facts rewritten (not stacked) when reality changes, strictly typed cards, deterministic gates against prompt injection and secret leaks, optional vector mode with one key
-
-### 29.06.2026
-
-- **v0.1.7** 👁️ Iva sees images — described by your provider's own vision model on the same key, with OCR; any attachment type no longer crashes the turn; nightly rollup records your corrections into CORE, so a fix you make today is followed tomorrow
-
 Full history — [CHANGELOG.md](CHANGELOG.md).
 
 ## Why people run Iva
