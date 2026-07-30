@@ -18,6 +18,7 @@ import { createTelegramUpdateReporter, loadTelegramJob, removeTelegramJob } from
 import { generateAssistantBearer, isAssistantBearer } from "../scripts/lib/assistant-auth.mjs";
 import { parseEnvText, writeEnvAtomicSync } from "../scripts/lib/env-file.mjs";
 import { classifyAgentListeners } from "../scripts/lib/listener-security.mjs";
+import { readMemoryMaintenanceReport } from "../scripts/lib/memory-maintenance.mjs";
 import { cleanupSystemdUnits, createSystemdControl } from "../scripts/lib/systemd-control.mjs";
 import {
   applyConfigTransaction,
@@ -44,7 +45,9 @@ const NPM = existsSync(join(NODE_BIN_DIR, "npm")) ? join(NODE_BIN_DIR, "npm") : 
 const childEnv = { ...process.env, PATH: `${NODE_BIN_DIR}:${process.env.PATH || ""}` };
 
 const SERVICES = ["iva.service", "iva-telegram-poll.service"];
-const MEMORY_TIMERS = ["daily", "weekly", "monthly", "yearly", "doctor"].map((n) => `iva-memory-${n}.timer`);
+const MEMORY_PERIODS = ["daily", "weekly", "monthly", "yearly", "doctor"];
+const MEMORY_SERVICES = MEMORY_PERIODS.map((n) => `iva-memory-${n}.service`);
+const MEMORY_TIMERS = MEMORY_PERIODS.map((n) => `iva-memory-${n}.timer`);
 const UPDATE_TIMER = "iva-update-check.timer";
 const TIMERS = [...MEMORY_TIMERS, UPDATE_TIMER];
 
@@ -799,6 +802,23 @@ async function cmdDoctor() {
   if (!timerFailed)
     ok(`Background timers enabled and active (${TIMERS.length}: ${MEMORY_TIMERS.length} memory + update check)`);
 
+  // A oneshot service can be inactive and still healthy; its persistent failed state is the
+  // signal that the last nightly run broke. Query only units actually installed on this host.
+  const installedMemoryServices = MEMORY_SERVICES.filter((unit) => existsSync(join(UNIT_DIR, unit)));
+  let failedMemoryServices = 0;
+  for (const unit of installedMemoryServices) {
+    const state = systemd.query("is-failed", unit);
+    if (state.code === 0 && state.out === "failed") {
+      bad(`${unit} failed — check: journalctl --user -u ${unit} -n 100 --no-pager`);
+      badN++;
+      failedMemoryServices++;
+    }
+  }
+  if (installedMemoryServices.length && failedMemoryServices === 0) {
+    ok(`Memory units have no failed state (${installedMemoryServices.length})`);
+    okN++;
+  }
+
   // 6. Vault + git origin (report only — we don't initiate git operations)
   const vaultRel = env.ASSISTANT_VAULT_DIR || "vault";
   const vaultPath = vaultRel.startsWith("/") ? vaultRel : join(ROOT, vaultRel);
@@ -809,6 +829,29 @@ async function cmdDoctor() {
       `vault without git origin — memory backup not configured:\n    gh repo create <user>/iva-vault --private --source="${vaultPath}" --remote=origin --push`,
     ),
     warnN++);
+
+  // enforce-report.json is produced by iva-memory-doctor.service, so only complain about
+  // missing/stale output when that timer is enabled. A fresh report is still useful either way.
+  const maintenanceTimerEnabled = systemd.isEnabled("iva-memory-doctor.timer");
+  const maintenanceReport = readMemoryMaintenanceReport(join(vaultPath, ".graph/enforce-report.json"));
+  if (maintenanceReport.status === "fresh") {
+    if (maintenanceReport.problems.length) {
+      warn(
+        `ночной maintenance сообщает о проблемах: ${maintenanceReport.problems
+          .map(({ key, count }) => `${key}=${count}`)
+          .join(", ")}`,
+      );
+      warnN++;
+    } else {
+      ok("Ночной maintenance-отчёт свежий, проблем нет");
+      okN++;
+    }
+  } else if (maintenanceTimerEnabled) {
+    if (maintenanceReport.status === "invalid")
+      warn("ночной maintenance оставил нечитаемый отчёт");
+    else warn("ночной maintenance давно не отчитывался");
+    warnN++;
+  }
 
   return summary();
 

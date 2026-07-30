@@ -95,13 +95,19 @@ async function fixture(t) {
       "  is-active)",
       '    if [ -f "$IVA_FAKE_SYSTEMD_STATE/$1.active" ]; then echo active; else echo inactive; exit 3; fi',
       "    ;;",
+      "  is-failed)",
+      '    if [ "${IVA_FAKE_FAILED_UNIT:-}" = "$1" ]; then echo failed; else echo inactive; exit 1; fi',
+      "    ;;",
       "esac",
       "",
     ].join("\n"),
   );
   await chmod(fakeSystemctl, 0o755);
 
-  const runCommand = (command, { args = [], exit = 0, failAction = "", inactiveUnit = "" } = {}) =>
+  const runCommand = (
+    command,
+    { args = [], exit = 0, failAction = "", inactiveUnit = "", failedUnit = "" } = {},
+  ) =>
     spawnSync(process.execPath, [join(project, "bin/iva.mjs"), command, ...args], {
       encoding: "utf8",
       env: {
@@ -115,12 +121,14 @@ async function fixture(t) {
         IVA_FAKE_SECRET_OUTPUT: SECRET,
         IVA_FAKE_SYSTEMD_STATE: state,
         IVA_FAKE_INACTIVE_UNIT: inactiveUnit,
+        IVA_FAKE_FAILED_UNIT: failedUnit,
       },
     });
 
   return {
     calls,
     envPath,
+    project,
     runStart: (exit = 0) => runCommand("start", { exit }),
     runCommand,
     async seedQuarantineFailure() {
@@ -209,6 +217,43 @@ test("doctor reports checked activation failures and keeps its summary", async (
   assert.match(output, /journalctl --user -u iva\.service -n 100 --no-pager/);
   assert.match(output, /Summary:/);
   assert.doesNotMatch(output, /Units installed, enabled and active/);
+});
+
+test("doctor checks installed memory services and reports failed ones with a journal hint", async (t) => {
+  const { calls, runCommand } = await fixture(t);
+  const result = runCommand("doctor", { failedUnit: "iva-memory-weekly.service" });
+  const output = `${result.stdout}\n${result.stderr}`;
+  const systemctlCalls = (await readFile(calls, "utf8")).trim().split("\n");
+  const checked = systemctlCalls
+    .filter((call) => call.startsWith("--user is-failed iva-memory-"))
+    .map((call) => call.split(" ").at(-1));
+
+  assert.equal(result.status, 1, output);
+  assert.deepEqual(checked, [
+    "iva-memory-daily.service",
+    "iva-memory-weekly.service",
+    "iva-memory-monthly.service",
+    "iva-memory-yearly.service",
+    "iva-memory-doctor.service",
+  ]);
+  assert.match(output, /iva-memory-weekly\.service failed/);
+  assert.match(output, /journalctl --user -u iva-memory-weekly\.service -n 100 --no-pager/);
+});
+
+test("doctor surfaces problems from a fresh nightly memory report", async (t) => {
+  const { project, runCommand } = await fixture(t);
+  const graph = join(project, "vault/.graph");
+  await mkdir(graph, { recursive: true });
+  await writeFile(
+    join(graph, "enforce-report.json"),
+    JSON.stringify({ review: 2, duplicates: 1, skipped_oversize: 3, unknown: 99 }),
+  );
+
+  const result = runCommand("doctor");
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  assert.match(output, /ночной maintenance сообщает о проблемах: review=2, duplicates=1, skipped_oversize=3/);
+  assert.doesNotMatch(output, /unknown=99/);
 });
 
 test("userbot setup restarts an already enabled and active unit for new desired config", async (t) => {
