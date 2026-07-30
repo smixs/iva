@@ -139,6 +139,24 @@ test("each accepted status write advances a monotonic per-chat generation", () =
   assert.equal(second.generation, 2);
 });
 
+test("per-chat status enumeration returns decoded keys and records", () => {
+  const dir = join(dataDir, "run-status.d");
+  status.setChatStatus("listed:-7", {
+    status: "running",
+    sessionId: "listed-session",
+  });
+  writeFileSync(
+    join(dir, ".json"),
+    JSON.stringify({ status: "running", sessionId: "empty-key" }),
+  );
+
+  const records = status.listChatStatuses();
+  const listed = records.find(({ chatKey }) => chatKey === "listed:-7");
+  assert.equal(listed?.status.status, "running");
+  assert.equal(listed?.status.sessionId, "listed-session");
+  assert.equal(records.some(({ chatKey }) => chatKey === ""), false);
+});
+
 test("a stale per-chat lock is reclaimed after a crashed writer", () => {
   const key = "stale-lock:";
   const encoded = Buffer.from(key, "utf8").toString("base64url");
