@@ -31,3 +31,6 @@ agent/skills/**/*token*.json
 agent/skills/**/*secret*
 agent/skills/**/*credential*
 agent/skills/**/*.pem
+
+# Update candidate worktree (iva update)
+/.iva-update/

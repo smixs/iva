@@ -10,6 +10,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -130,6 +131,10 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
   let outputBackup = "";
   let changed = false;
   let originalUntracked = [];
+  let cachedTarget = null;
+  let candidate = null;
+  let nodeModulesBackup = "";
+  let outputTouched = false;
 
   const run = (command, args) => runCommand(command, args, { cwd: root, env: commandEnv, logFile, verbose });
   const git = (...args) => run("git", args);
@@ -166,29 +171,36 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
     return { originalHead, branch, hadLocalChanges, stashOid };
   }
 
-  async function fetchAndIntegrate() {
+  // Fetch + классификация плана интеграции БЕЗ движения HEAD. Отдельный шаг, чтобы
+  // buildCandidate() мог собрать target в worktree до любых изменений живого дерева.
+  async function resolveTarget() {
     const target = await resolveUpdateTarget({ git });
     updateBranch = target.branch;
     const remote = target.targetHead;
-    if (remote === originalHead) return { changed: false, remote, ...target };
-
-    const ff = await git("merge-base", "--is-ancestor", originalHead, remote);
-    if (ff.code === 0) {
-      await mustGit("merge", "--ff-only", remote);
-      changed = true;
-      return { changed, remote, ...target };
+    let plan = "none";
+    if (remote !== originalHead) {
+      if ((await git("merge-base", "--is-ancestor", originalHead, remote)).code === 0) plan = "fast-forward";
+      else if ((await git("merge-base", "--is-ancestor", remote, originalHead)).code === 0) plan = "none";
+      else plan = "rebase";
     }
+    cachedTarget = { ...target, remote, plan, changed: plan !== "none" };
+    return cachedTarget;
+  }
 
-    const remoteBehind = await git("merge-base", "--is-ancestor", remote, originalHead);
-    if (remoteBehind.code === 0) return { changed: false, remote, ...target };
-
-    const rebase = await git("rebase", remote);
-    if (rebase.code !== 0) {
-      await git("rebase", "--abort");
-      throw new Error("local commits conflict with the update");
+  async function fetchAndIntegrate() {
+    const target = cachedTarget ?? (await resolveTarget());
+    if (target.plan === "none") return { ...target, changed: false };
+    if (target.plan === "fast-forward") {
+      await mustGit("merge", "--ff-only", target.remote);
+    } else {
+      const rebase = await git("rebase", target.remote);
+      if (rebase.code !== 0) {
+        await git("rebase", "--abort");
+        throw new Error("local commits conflict with the update");
+      }
     }
     changed = true;
-    return { changed, remote, ...target };
+    return { ...target, changed };
   }
 
   async function restoreLocalChanges() {
@@ -198,7 +210,78 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
     stashApplied = true;
   }
 
+  // Сборка кандидата обновления в detached worktree (ROOT/.iva-update/staging), не трогая
+  // живую установку: пока кандидат не собрался, ни .output, ни node_modules, ни HEAD не
+  // меняются — сломанный target приводит к раннему abort с нетронутой ивой.
+  // Только для чистого fast-forward без локальных правок: тогда итоговый HEAD гарантированно
+  // равен SHA кандидата. Rebase локальных коммитов / грязное дерево / force-пересборка идут
+  // прежним in-place путём (не жжём лишний билд на слабом VPS).
+  async function buildCandidate({ npm = "npm" } = {}) {
+    if (!cachedTarget) throw new Error("resolveTarget must run before buildCandidate");
+    if (cachedTarget.plan !== "fast-forward" || hadLocalChanges) return null;
+    const staging = join(root, ".iva-update", "staging");
+    await teardownCandidate();
+    const added = await git("worktree", "add", "--detach", staging, cachedTarget.remote);
+    if (added.code !== 0) throw new Error(added.stderr || "couldn't prepare the update candidate worktree");
+    try {
+      const depsDiff = await mustGit(
+        "diff", "--name-only", `${originalHead}..${cachedTarget.remote}`, "--", "package.json", "package-lock.json",
+      );
+      const depsChanged = Boolean(depsDiff.trim());
+      if (depsChanged) {
+        const install = await runCommand(
+          npm,
+          [existsSync(join(staging, "package-lock.json")) ? "ci" : "install"],
+          { cwd: staging, env: commandEnv, logFile, verbose },
+        );
+        if (install.code !== 0) throw new Error("candidate dependency installation failed — live installation untouched");
+      } else {
+        // Лок не менялся — живые node_modules (уже пропатченные patch-package) валидны для target.
+        symlinkSync(join(root, "node_modules"), join(staging, "node_modules"), "dir");
+      }
+      // Паритет с in-place сборкой: она идёт в cwd, где лежит .env.
+      if (existsSync(envPath)) symlinkSync(envPath, join(staging, ".env"));
+      const build = await runCommand(npm, ["run", "build"], { cwd: staging, env: commandEnv, logFile, verbose });
+      if (build.code !== 0) throw new Error("candidate build failed — live installation untouched");
+      candidate = { staging, targetSha: cachedTarget.remote, depsChanged };
+      return candidate;
+    } catch (error) {
+      await teardownCandidate();
+      throw error;
+    }
+  }
+
+  // Перенос артефактов кандидата в живой корень. Только rename внутри root (одна ФС, атомарно).
+  // false — вызывающий обязан собрать in-place, как раньше.
+  async function promoteCandidate() {
+    if (!candidate) return false;
+    if (!existsSync(join(candidate.staging, ".output"))) return false;
+    const head = await mustGit("rev-parse", "HEAD");
+    if (head !== candidate.targetSha) return false;
+    if (candidate.depsChanged) {
+      // Свежие node_modules обязаны существовать в staging; иначе безопаснее пересобрать in-place.
+      if (!existsSync(join(candidate.staging, "node_modules"))) return false;
+      nodeModulesBackup = join(root, `node_modules.iva-backup-${Date.now()}`);
+      renameSync(join(root, "node_modules"), nodeModulesBackup);
+      renameSync(join(candidate.staging, "node_modules"), join(root, "node_modules"));
+    }
+    backupOutput();
+    renameSync(join(candidate.staging, ".output"), join(root, ".output"));
+    return true;
+  }
+
+  // Идемпотентный teardown: безопасен до создания worktree, после переноса артефактов и
+  // при остатках от упавшего прошлого апдейта.
+  async function teardownCandidate() {
+    const stagingRoot = join(root, ".iva-update");
+    await git("worktree", "remove", "--force", join(stagingRoot, "staging"));
+    await git("worktree", "prune");
+    rmSync(stagingRoot, { recursive: true, force: true });
+    candidate = null;
+  }
+
   function backupOutput() {
+    outputTouched = true;
     const output = join(root, ".output");
     if (!existsSync(output)) return;
     outputBackup = join(root, `.output.iva-backup-${Date.now()}`);
@@ -218,6 +301,11 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
     if (envBackup && existsSync(envBackup)) {
       copyFileSync(envBackup, envPath);
       chmodSync(envPath, 0o600);
+    }
+    if (nodeModulesBackup && existsSync(nodeModulesBackup)) {
+      rmSync(join(root, "node_modules"), { recursive: true, force: true });
+      renameSync(nodeModulesBackup, join(root, "node_modules"));
+      nodeModulesBackup = "";
     }
     restoreOutput();
     if (stashOid) {
@@ -246,6 +334,10 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
       rmSync(outputBackup, { recursive: true, force: true });
       outputBackup = "";
     }
+    if (nodeModulesBackup) {
+      rmSync(nodeModulesBackup, { recursive: true, force: true });
+      nodeModulesBackup = "";
+    }
     await dropExactStash();
     if (updateBranch) await persistUpdateBranch(git, updateBranch);
     if (backupRef) await git("update-ref", "-d", backupRef);
@@ -266,8 +358,12 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
 
   return {
     protect,
+    resolveTarget,
     fetchAndIntegrate,
     restoreLocalChanges,
+    buildCandidate,
+    promoteCandidate,
+    teardownCandidate,
     backupOutput,
     rollback,
     commit,
@@ -277,5 +373,6 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
     get changed() { return changed; },
     get hadLocalChanges() { return hadLocalChanges; },
     get stashApplied() { return stashApplied; },
+    get outputTouched() { return outputTouched; },
   };
 }

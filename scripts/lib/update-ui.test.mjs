@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelSummary } from "./model-summary.mjs";
@@ -495,4 +495,155 @@ test("conflicting local commits abort rebase and restore the original branch", a
   assert.equal(git(local, "rev-parse", "HEAD"), originalHead);
   assert.equal(readFileSync(join(local, "tracked.txt"), "utf8"), "local commit\n");
   assert.equal(git(local, "status", "--porcelain=v1"), "");
+});
+
+// --- Worktree-кандидат апдейта (buildCandidate/promoteCandidate) ---------------------------
+
+const FAKE_BUILD =
+  "node -e \"const f=require('node:fs');f.mkdirSync('.output/server',{recursive:true});" +
+  "f.writeFileSync('.output/server/marker.txt',f.readFileSync('tracked.txt','utf8').trim())\"";
+
+function candidateFixture({ buildScript = FAKE_BUILD } = {}) {
+  const temp = mkdtempSync(join(tmpdir(), "iva-update-candidate-"));
+  const remote = join(temp, "remote.git");
+  const seed = join(temp, "seed");
+  const local = join(temp, "local");
+  const data = join(temp, "data");
+  git(temp, "init", "--bare", remote);
+  git(temp, "init", "-b", "main", seed);
+  configureGit(seed);
+  writeFileSync(join(seed, ".gitignore"), ".env\n.output\n/.iva-update/\nnode_modules\n");
+  writeFileSync(join(seed, "package.json"), JSON.stringify({ name: "fixture", version: "1.0.0", scripts: { build: buildScript } }));
+  writeFileSync(join(seed, "tracked.txt"), "base\n");
+  git(seed, "add", ".");
+  git(seed, "commit", "-m", "base");
+  git(seed, "remote", "add", "origin", remote);
+  git(seed, "push", "-u", "origin", "main");
+  git(temp, "clone", "--branch", "main", remote, local);
+  configureGit(local);
+  mkdirSync(data, { recursive: true });
+  mkdirSync(join(local, ".output/server"), { recursive: true });
+  writeFileSync(join(local, ".output/server/marker.txt"), "live");
+  return { temp, remote, seed, local, data };
+}
+
+function pushUpstream(seed, mutate, message) {
+  mutate(seed);
+  git(seed, "add", ".");
+  git(seed, "commit", "-m", message);
+  git(seed, "push", "origin", "main");
+  return git(seed, "rev-parse", "HEAD");
+}
+
+function candidateTx({ local, temp, data }) {
+  return createUpdateTransaction({
+    root: local,
+    dataDir: data,
+    envPath: join(local, ".env"),
+    logFile: join(temp, "log"),
+  });
+}
+
+test("update candidate builds in a worktree and is promoted after a clean fast-forward", async () => {
+  const fx = candidateFixture();
+  const target = pushUpstream(fx.seed, (seed) => {
+    writeFileSync(join(seed, "tracked.txt"), "v2\n");
+  }, "bump");
+  const tx = candidateTx(fx);
+  await tx.protect();
+  const update = await tx.resolveTarget();
+  assert.equal(update.plan, "fast-forward");
+  const candidate = await tx.buildCandidate({ npm: "npm" });
+  assert.ok(candidate, "clean fast-forward must produce a candidate");
+  assert.equal(readFileSync(join(fx.local, ".output/server/marker.txt"), "utf8"), "live");
+  await tx.fetchAndIntegrate();
+  assert.equal(await tx.promoteCandidate(), true);
+  await tx.commit();
+  await tx.teardownCandidate();
+  assert.equal(git(fx.local, "rev-parse", "HEAD"), target);
+  assert.equal(readFileSync(join(fx.local, ".output/server/marker.txt"), "utf8"), "v2");
+  assert.equal(existsSync(join(fx.local, ".iva-update")), false);
+  assert.equal(git(fx.local, "stash", "list"), "");
+  assert.equal(git(fx.local, "worktree", "list").split("\n").length, 1);
+});
+
+test("broken candidate build aborts before the live checkout is touched", async () => {
+  const fx = candidateFixture();
+  pushUpstream(fx.seed, (seed) => {
+    const pkg = JSON.parse(readFileSync(join(seed, "package.json"), "utf8"));
+    pkg.version = "1.1.0";
+    pkg.scripts.build = "node -e \"process.exit(1)\"";
+    writeFileSync(join(seed, "package.json"), JSON.stringify(pkg));
+  }, "broken build");
+  const baseline = git(fx.local, "rev-parse", "HEAD");
+  const tx = candidateTx(fx);
+  await tx.protect();
+  await tx.resolveTarget();
+  await assert.rejects(() => tx.buildCandidate({ npm: "npm" }), /candidate build failed/);
+  assert.equal(tx.outputTouched, false);
+  await tx.rollback();
+  assert.equal(git(fx.local, "rev-parse", "HEAD"), baseline);
+  assert.equal(readFileSync(join(fx.local, ".output/server/marker.txt"), "utf8"), "live");
+  assert.equal(existsSync(join(fx.local, ".iva-update")), false);
+});
+
+test("changed lockfile installs candidate dependencies and promotes fresh node_modules", async () => {
+  const fx = candidateFixture();
+  const npmLock = (cwd) =>
+    execFileSync("npm", ["install", "--package-lock-only", "--no-audit", "--no-fund"], { cwd, encoding: "utf8" });
+  const writeDep = (seed, version) => {
+    mkdirSync(join(seed, "dep"), { recursive: true });
+    writeFileSync(join(seed, "dep/package.json"), JSON.stringify({ name: "dep", version }));
+  };
+  writeDep(fx.seed, "1.0.0");
+  const pkg = JSON.parse(readFileSync(join(fx.seed, "package.json"), "utf8"));
+  pkg.dependencies = { dep: "file:dep" };
+  writeFileSync(join(fx.seed, "package.json"), JSON.stringify(pkg));
+  npmLock(fx.seed);
+  git(fx.seed, "add", ".");
+  git(fx.seed, "commit", "-m", "lockfile");
+  git(fx.seed, "push", "origin", "main");
+  git(fx.local, "pull", "--ff-only");
+  mkdirSync(join(fx.local, "node_modules"), { recursive: true });
+  writeFileSync(join(fx.local, "node_modules/sentinel.txt"), "old-deps");
+  pushUpstream(fx.seed, (seed) => {
+    const bumped = JSON.parse(readFileSync(join(seed, "package.json"), "utf8"));
+    bumped.version = "1.1.0";
+    writeFileSync(join(seed, "package.json"), JSON.stringify(bumped));
+    writeDep(seed, "1.1.0");
+    npmLock(seed);
+  }, "bump deps");
+  const tx = candidateTx(fx);
+  await tx.protect();
+  await tx.resolveTarget();
+  const candidate = await tx.buildCandidate({ npm: "npm" });
+  assert.ok(candidate);
+  assert.equal(candidate.depsChanged, true);
+  await tx.fetchAndIntegrate();
+  assert.equal(await tx.promoteCandidate(), true);
+  assert.equal(existsSync(join(fx.local, "node_modules/sentinel.txt")), false);
+  assert.equal(existsSync(join(fx.local, "node_modules/dep")), true);
+  await tx.commit();
+  await tx.teardownCandidate();
+  assert.equal(readFileSync(join(fx.local, ".output/server/marker.txt"), "utf8"), "base");
+  const leftovers = readdirSync(fx.local).filter((name) => name.startsWith("node_modules.iva-backup-"));
+  assert.deepEqual(leftovers, []);
+});
+
+test("local commits skip the candidate and keep the in-place path", async () => {
+  const fx = candidateFixture();
+  pushUpstream(fx.seed, (seed) => {
+    writeFileSync(join(seed, "upstream.txt"), "upstream\n");
+  }, "upstream");
+  writeFileSync(join(fx.local, "local.txt"), "local\n");
+  git(fx.local, "add", "local.txt");
+  git(fx.local, "commit", "-m", "local commit");
+  const tx = candidateTx(fx);
+  await tx.protect();
+  const update = await tx.resolveTarget();
+  assert.equal(update.plan, "rebase");
+  assert.equal(await tx.buildCandidate({ npm: "npm" }), null);
+  const integrated = await tx.fetchAndIntegrate();
+  assert.equal(integrated.changed, true);
+  assert.equal(await tx.promoteCandidate(), false);
 });
