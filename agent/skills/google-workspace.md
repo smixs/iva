@@ -41,15 +41,17 @@ gws <сервис> --help          # покажет и хелперы (+…), и
 Диапазоны Таблиц содержат `!` — оборачивай значение в ОДИНАРНЫЕ кавычки (иначе bash сломает).
 
 Google Задачи (Tasks) — хелперов нет, только Discovery. `tasklist` — ОБЯЗАТЕЛЬНЫЙ параметр во
-всех вызовах `gws tasks tasks …`; id списка бери из `tasklists list` (обычно первый — «Мои задачи»).
+всех вызовах `gws tasks tasks …`: для списка по умолчанию подставляй `@default`, для именованного —
+найди список по `title` в `tasklists list` и возьми его `id` (порядок списков там не гарантирован).
 URL-параметры идут в `--params`, тело задачи — в `--json`. `due` — RFC3339 в UTC.
 ```bash
 gws tasks tasklists list                                         # id списков + названия
-gws tasks tasks list --params '{"tasklist":"LIST_ID"}'           # + "showCompleted":true — с закрытыми
-gws tasks tasks insert --params '{"tasklist":"LIST_ID"}' \
+gws tasks tasks list --params '{"tasklist":"@default","showCompleted":false}'  # только открытые (по умолчанию придут и закрытые)
+gws tasks tasks list --params '{"tasklist":"@default","showCompleted":true,"showHidden":true}'  # + закрытые из приложений Google
+gws tasks tasks insert --params '{"tasklist":"@default"}' \
   --json '{"title":"Позвонить в банк","notes":"по карте","due":"2026-08-01T00:00:00.000Z"}'
-gws tasks tasks patch --params '{"tasklist":"LIST_ID","task":"TASK_ID"}' --json '{"status":"completed"}'
-gws tasks tasks delete --params '{"tasklist":"LIST_ID","task":"TASK_ID"}'
+gws tasks tasks patch --params '{"tasklist":"@default","task":"TASK_ID"}' --json '{"status":"completed"}'
+gws tasks tasks delete --params '{"tasklist":"@default","task":"TASK_ID"}'
 ```
 
 ## Подключение (регистрация ключа) — проводи по шагам
@@ -82,6 +84,10 @@ callback из внешнего браузера на сервер не дохо�
 финальный статус — «✅ Google-аккаунт подключён» или предложит повторить.
 
 **Шаг 4. Проверка.** `gws gmail +triage` — если вернулся JSON (код 0), всё подключено.
+
+Если аккаунт подключён давно, а новый сервис (например, Задачи) отвечает 403 `insufficient
+permissions` — старый токен выдан без этих прав. Лечится повторным входом: `/menu → 🔗 Google →
+«Переподключить»`, тот же флоу из Шага 3.
 
 ### Альтернативы (для продвинутых / если Шаг 3 не идёт)
 - **Готовый токен:** `export GOOGLE_WORKSPACE_CLI_TOKEN=$(gcloud auth print-access-token)` — если у

@@ -116,10 +116,22 @@ export default {
         rows: [[ctx.btn(T("Connect", "Подключить"), `iva_menu:${SID}:do:connect`)], checkRow, ctx.backRow(PARENT)],
       };
     }
-    // ok
+    // ok. Probing only proves the token works, not which scopes it carries — a token issued before
+    // a service was added to AUTH_SERVICES still probes as connected. So name the services the
+    // login asks for and keep a re-login button here, the only way to pick up newly added ones.
+    const text = [
+      head,
+      "",
+      T(`✅ Google account connected. Login requests: ${SCOPES}.`, `✅ Google-аккаунт подключён. При входе запрашиваются: ${SCOPES}.`),
+      "",
+      T(
+        "Connected before a service was added? Tap «Reconnect» to grant it.",
+        "Подключался раньше, чем в список добавился сервис? Нажми «Переподключить», чтобы выдать права.",
+      ),
+    ].join("\n");
     return {
-      text: `${head}\n\n${T(`✅ Google account connected. Scopes: ${SCOPES}.`, `✅ Google-аккаунт подключён. Права: ${SCOPES}.`)}`,
-      rows: [checkRow, ctx.backRow(PARENT)],
+      text,
+      rows: [[ctx.btn(T("Reconnect", "Переподключить"), `iva_menu:${SID}:do:connect`)], checkRow, ctx.backRow(PARENT)],
     };
   },
 
