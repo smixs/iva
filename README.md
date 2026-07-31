@@ -30,6 +30,11 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 
 ### 31.07.2026
 
+#### v0.3.8
+
+- ✅ Iva works with Google Tasks — add, view and close a task.
+- 🔑 Connected Google earlier? Tap "Reconnect" in /menu → Google to grant access to Tasks.
+
 #### v0.3.7
 
 - 🛡️ Updates are safer: a broken update no longer touches your working Iva.
