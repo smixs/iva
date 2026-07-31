@@ -524,6 +524,7 @@ function candidateFixture({ buildScript = FAKE_BUILD } = {}) {
   mkdirSync(data, { recursive: true });
   mkdirSync(join(local, ".output/server"), { recursive: true });
   writeFileSync(join(local, ".output/server/marker.txt"), "live");
+  mkdirSync(join(local, "node_modules"), { recursive: true });
   return { temp, remote, seed, local, data };
 }
 
