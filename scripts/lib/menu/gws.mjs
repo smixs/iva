@@ -11,13 +11,14 @@ import { mkdir, writeFile, chmod, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { startAuth, relayCode, extractCallbackQuery, gwsBin, childEnv } from "./gws-auth.mjs";
+import { startAuth, relayCode, extractCallbackQuery, gwsBin, childEnv, AUTH_SERVICES } from "./gws-auth.mjs";
 
 const SID = "gws";
 const PARENT = "r";
 const CONFIG_DIR = join(homedir(), ".config/gws");
 const SECRET_PATH = join(CONFIG_DIR, "client_secret.json");
 const CACHE_TTL_MS = 60_000;
+const SCOPES = AUTH_SERVICES.split(",").join(", ");
 let cache = { at: 0, status: null };
 
 const isPrivate = (st) => Number(st.chatId) > 0;
@@ -117,7 +118,7 @@ export default {
     }
     // ok
     return {
-      text: `${head}\n\n${T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive.")}`,
+      text: `${head}\n\n${T(`✅ Google account connected. Scopes: ${SCOPES}.`, `✅ Google-аккаунт подключён. Права: ${SCOPES}.`)}`,
       rows: [checkRow, ctx.backRow(PARENT)],
     };
   },
@@ -279,7 +280,7 @@ export default {
       if ((await authStatus()) === "ok") {
         return ctx.flows.screen(
           st,
-          T("✅ Google account connected. Scopes: gmail, calendar, drive.", "✅ Google-аккаунт подключён. Права: gmail, calendar, drive."),
+          T(`✅ Google account connected. Scopes: ${SCOPES}.`, `✅ Google-аккаунт подключён. Права: ${SCOPES}.`),
           [ctx.backRow(PARENT)],
         );
       }

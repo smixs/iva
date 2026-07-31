@@ -69,10 +69,13 @@ export function childEnv() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Services we request at login. Single source of truth: the menu shows the same list to the user.
+export const AUTH_SERVICES = "gmail,calendar,drive,tasks";
+
 // Start `gws auth login` detached, capturing stdout to a temp log. Poll the log until gws prints
 // the consent URL + loopback port, then return { pid, port, url, logPath }. Returns null if gws
 // never printed the challenge (died early / timed out) — the child is killed in that case.
-export async function startAuth({ services = "gmail,calendar,drive", timeoutMs = 6000 } = {}) {
+export async function startAuth({ services = AUTH_SERVICES, timeoutMs = 6000 } = {}) {
   const logPath = join(tmpdir(), `iva-gws-auth-${process.pid}-${Date.now()}.log`);
   const fd = openSync(logPath, "a");
   let child;
