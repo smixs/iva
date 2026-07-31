@@ -227,7 +227,9 @@ export function createUpdateTransaction({ root, dataDir, envPath, verbose = fals
       const depsDiff = await mustGit(
         "diff", "--name-only", `${originalHead}..${cachedTarget.remote}`, "--", "package.json", "package-lock.json",
       );
-      const depsChanged = Boolean(depsDiff.trim());
+      // Отсутствие живых node_modules (битая/недоустановленная инсталляция) лечим так же,
+      // как смену лока: полной установкой зависимостей в staging.
+      const depsChanged = Boolean(depsDiff.trim()) || !existsSync(join(root, "node_modules"));
       if (depsChanged) {
         const install = await runCommand(
           npm,
