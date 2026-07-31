@@ -462,27 +462,25 @@ async function cmdUpdate(args) {
     await phaseDone("protect");
 
     await phaseStart("fetch");
-    const update = await tx.fetchAndIntegrate();
-    await tx.restoreLocalChanges();
-    versions = await tx.versions();
-    await phaseDone("fetch");
-
+    // Только fetch + классификация, HEAD не двигается: живая установка меняется лишь после
+    // успешной сборки кандидата в worktree (см. buildCandidate в update-safety.mjs).
+    const update = await tx.resolveTarget();
     if (!update.changed && !force) {
+      await tx.restoreLocalChanges();
+      versions = await tx.versions();
+      await phaseDone("fetch");
       if (!(await finalizeUpdate())) return;
       terminal.info(`✅ ${text.current} (${versions.afterVersion})`);
       await reporter?.complete({ ...versions, changedLocal: tx.hadLocalChanges });
       return;
     }
+    await phaseDone("fetch");
 
     await phaseStart("build");
-    if (update.changed) {
-      const diff = await tx.git("diff", "--name-only", `${versions.beforeHead}..${versions.afterHead}`);
-      const files = diff.stdout.split("\n");
-      if (files.includes("package.json") || files.includes("package-lock.json")) {
-        const install = await tx.run(NPM, [existsSync(join(ROOT, "package-lock.json")) ? "ci" : "install"]);
-        if (install.code !== 0) throw new Error("dependency installation failed");
-      }
-    }
+    const candidate = await tx.buildCandidate({ npm: NPM });
+    const integrated = await tx.fetchAndIntegrate();
+    await tx.restoreLocalChanges();
+    versions = await tx.versions();
     migrateEnv({ quiet: true });
     // The streaming cleaner repairs cards the old frontmatter writer bloated to GBs (those
     // OOM-kill the agent and the nightly doctor, so waiting for the doctor is not an option).
@@ -496,9 +494,20 @@ async function cmdUpdate(args) {
       if (cleaned.status === 0 && !cleaned.stdout.includes(" 0 file(s)"))
         terminal.info(`🧹 ${cleaned.stdout.trim().split("\n").pop()}`);
     } catch {}
-    tx.backupOutput();
-    const build = await tx.run(NPM, ["run", "build"]);
-    if (build.code !== 0) throw new Error("build failed");
+    const promoted = candidate ? await tx.promoteCandidate() : false;
+    if (!promoted) {
+      if (integrated.changed) {
+        const diff = await tx.git("diff", "--name-only", `${versions.beforeHead}..${versions.afterHead}`);
+        const files = diff.stdout.split("\n");
+        if (files.includes("package.json") || files.includes("package-lock.json")) {
+          const install = await tx.run(NPM, [existsSync(join(ROOT, "package-lock.json")) ? "ci" : "install"]);
+          if (install.code !== 0) throw new Error("dependency installation failed");
+        }
+      }
+      tx.backupOutput();
+      const build = await tx.run(NPM, ["run", "build"]);
+      if (build.code !== 0) throw new Error("build failed");
+    }
 
     // Best-effort helper for an integration that has no active local service.
     await tx.run(NPM, ["i", "-g", "@googleworkspace/cli@latest"]);
@@ -544,7 +553,9 @@ async function cmdUpdate(args) {
       rollbackOk = false;
       codeRollbackOk = false;
     }
-    if (phase === "build" && hasSystemd()) {
+    // Пока живые .output/node_modules не тронуты (упал кандидат или интеграция),
+    // здоровые сервисы не перезапускаем.
+    if (phase === "build" && tx.outputTouched && hasSystemd()) {
       try {
         writeUnits();
         systemd.restart(SERVICES);
@@ -568,6 +579,9 @@ async function cmdUpdate(args) {
     terminal.info(`${error.message}. ${locale === "ru" ? "Откат" : "Rollback"}: ${rollbackOk ? "OK" : "FAILED"}. ${locale === "ru" ? "Лог" : "Log"}: ${logFile}`);
     process.exitCode = 1;
   } finally {
+    try {
+      await tx.teardownCandidate();
+    } catch {}
     terminal.dispose();
     reporter?.dispose();
     releaseUpdateLock(lock);
