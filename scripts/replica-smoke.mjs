@@ -124,15 +124,21 @@ async function waitForHealth(port, child) {
 }
 
 async function turn(session, prompt, timeoutMs = TURN_TIMEOUT_MS) {
-  const result = await Promise.race([
-    session.send(prompt).then((r) => {
-      note(`[smoke] send accepted (session ${session.state?.sessionId ?? "new"})`);
-      return r.result();
-    }),
-    new Promise((_, reject) =>
-      setTimeout(reject, timeoutMs, new Error(`turn timed out after ${timeoutMs / 1000}s`)),
-    ),
-  ]);
+  let timer;
+  let result;
+  try {
+    result = await Promise.race([
+      session.send(prompt).then((r) => {
+        note(`[smoke] send accepted (session ${session.state?.sessionId ?? "new"})`);
+        return r.result();
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(reject, timeoutMs, new Error(`turn timed out after ${timeoutMs / 1000}s`));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
   note(`[smoke] turn done: ${JSON.stringify(result?.status)}`);
   if (result.status === "failed" || !result.message) {
     throw new Error(`turn failed: status=${result.status} message=${JSON.stringify(result.message ?? "")}`);
