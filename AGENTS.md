@@ -15,7 +15,9 @@ kind (no Co-Authored-By bots, no "Generated with" footers). See CLAUDE.md.
 
 - **Secrets and machine-specific paths.** No credentials in the tree: Telegram bot
   tokens, API keys, session strings must come only from `.env` or runtime data
-  outside the repo. Flag any hardcoded secret, token-looking literal, or absolute
+  outside the repo. `.gitignore` must keep ignoring `.env`, `.env.*`, `data`, and
+  `/vault/` — flag any PR that removes or narrows these entries, commits a file
+  from these paths, or adds a hardcoded secret, token-looking literal, or absolute
   path from a specific machine (e.g. `/home/<user>/...`).
 - **Auth and permission gates.** `agent/lib/eve-auth.*` and `scripts/lib/*auth*`,
   `scripts/lib/listener-security.*` define who may talk to the assistant and which
@@ -32,11 +34,17 @@ kind (no Co-Authored-By bots, no "Generated with" footers). See CLAUDE.md.
   `data/settings.json` or other persisted formats that is not
   backward-compatible — self-host users upgrade from arbitrary older versions.
 - **Rebuild-sensitive changes.** Changes under `agent/` alter runtime behavior only
-  after `eve build`. Flag PRs whose description claims runtime testing of `agent/*`
-  changes without a rebuild step.
-- **Tool inputs are validated.** Agent tools take zod-validated inputs. Flag new or
-  changed tool parameters that skip zod validation, or handlers that pass raw
-  user-controlled strings into shell commands or file paths.
+  after `eve build` (`eve start` does not rebuild). Any PR touching `agent/*` must
+  account for a rebuild in its deploy/testing story; flag runtime-testing claims
+  for `agent/*` changes that lack a rebuild step, and update-flow or deploy scripts
+  that start the service after changing `agent/*` without running `eve build`.
+- **Tool inputs are validated — and constrained.** Agent tools take zod-validated
+  inputs, but schema validation alone is not input safety: a validated string can
+  still carry command injection or path traversal. Flag new or changed tool
+  parameters that skip zod validation; enum-like parameters without an allowlist
+  of accepted values; file-path parameters not resolved and bounds-checked against
+  their allowed base directory; and any handler that interpolates user-controlled
+  strings into shell commands instead of passing them as arguments.
 
 Safe areas needing no deep review: `docs/` static site, `README*` wording,
 `deploy/*.service` unit descriptions. Mechanical style issues are left to CI.
