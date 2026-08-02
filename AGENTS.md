@@ -13,11 +13,13 @@ kind (no Co-Authored-By bots, no "Generated with" footers). See CLAUDE.md.
 
 ## Code Review Rules
 
-- **Secrets and machine-specific paths.** No credentials in the tree: Telegram bot
-  tokens, API keys, session strings must come only from `.env` or runtime data
-  outside the repo. `.gitignore` must keep ignoring `.env`, `.env.*`, `data`, and
-  `/vault/` — flag any PR that removes or narrows these entries, commits a file
-  from these paths, or adds a hardcoded secret, token-looking literal, or absolute
+- **Secrets and machine-specific paths.** Credentials must never live in tracked
+  files. Telegram bot tokens, API keys, and session strings load only from a
+  local, untracked, gitignored `.env` or from runtime data outside the repo;
+  `data/`, `attachments/`, and the vault stay untracked. `.gitignore` must keep
+  ignoring `.env`, `.env.*`, `data`, and `/vault/` — flag any PR that removes or
+  narrows these entries, and reject files from these paths if they appear in
+  Git's index. Also flag any hardcoded secret, token-looking literal, or absolute
   path from a specific machine (e.g. `/home/<user>/...`).
 - **Auth and permission gates.** `agent/lib/eve-auth.*` and `scripts/lib/*auth*`,
   `scripts/lib/listener-security.*` define who may talk to the assistant and which
