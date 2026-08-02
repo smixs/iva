@@ -1,0 +1,42 @@
+# AGENTS.md — Iva
+
+Iva is a self-hosted personal Telegram assistant built on the eve agent framework
+(TypeScript ESM). Core runtime lives in `agent/` (import alias `#*` → `./agent/*`),
+operational scripts in `scripts/`, CLI entry in `bin/iva.mjs`.
+
+Build: `npm run build` (eve build — required after any `agent/*` change; `eve start`
+does NOT rebuild). Typecheck: `npm run typecheck`. Tests: `node --test` over
+`*.test.mjs` (see `test:security`, `test:update-ui` scripts).
+
+Commit messages must describe only the code change — no AI/tool attribution of any
+kind (no Co-Authored-By bots, no "Generated with" footers). See CLAUDE.md.
+
+## Code Review Rules
+
+- **Secrets and machine-specific paths.** No credentials in the tree: Telegram bot
+  tokens, API keys, session strings must come only from `.env` or runtime data
+  outside the repo. Flag any hardcoded secret, token-looking literal, or absolute
+  path from a specific machine (e.g. `/home/<user>/...`).
+- **Auth and permission gates.** `agent/lib/eve-auth.*` and `scripts/lib/*auth*`,
+  `scripts/lib/listener-security.*` define who may talk to the assistant and which
+  chats may trigger actions. Flag any change that widens an allow-list, removes a
+  chat-type check (secrets/settings must stay private-chat-only), or bypasses these
+  gates from a new code path.
+- **User data stays out of the repo.** Runtime user data belongs to the vault and
+  `data/` (both untracked). Flag code that writes user content, chat logs, or
+  generated files into tracked repo paths, and any PR that commits files from
+  `data/`, `attachments/`, or a vault.
+- **Self-host update path.** `iva update` runs under the OLD installed CLI: new
+  update-flow steps only take effect starting from the NEXT release. Flag update
+  logic that assumes the just-pulled code is already executing, and any change to
+  `data/settings.json` or other persisted formats that is not
+  backward-compatible — self-host users upgrade from arbitrary older versions.
+- **Rebuild-sensitive changes.** Changes under `agent/` alter runtime behavior only
+  after `eve build`. Flag PRs whose description claims runtime testing of `agent/*`
+  changes without a rebuild step.
+- **Tool inputs are validated.** Agent tools take zod-validated inputs. Flag new or
+  changed tool parameters that skip zod validation, or handlers that pass raw
+  user-controlled strings into shell commands or file paths.
+
+Safe areas needing no deep review: `docs/` static site, `README*` wording,
+`deploy/*.service` unit descriptions. Mechanical style issues are left to CI.
