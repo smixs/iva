@@ -1,5 +1,6 @@
 import { defineHook } from "eve/hooks";
 import { appendUsage, subagentTurnId } from "../../scripts/lib/usage.ts";
+import { resolveModelProvider } from "../lib/model-provider.ts";
 
 // Учёт фактического расхода токенов. ОДИН хук ловит весь расход одного eve-агента без
 // двойного счёта: основной чат (channel.kind="telegram") и фоновые джобы через eve/client —
@@ -11,19 +12,8 @@ import { appendUsage, subagentTurnId } from "../../scripts/lib/usage.ts";
 // КАЖДОМ шаге модели, включая tool-call раунды. Относительный импорт scripts/lib работает
 // в бандле (см. transcript.ts).
 
-const PROVIDER = process.env.MODEL_PROVIDER ?? "ollama";
-// Модель/провайдер не приходят в событие — берём из env (та же логика, что в agent/agent.ts).
-const MODEL =
-  PROVIDER === "codex"
-    ? (process.env.CODEX_MODEL ?? "gpt-5.5")
-    : PROVIDER === "openrouter"
-      ? (process.env.OPENROUTER_MODEL ?? "openai/gpt-5.1")
-      : PROVIDER === "opencode"
-        ? (process.env.OPENCODE_MODEL ?? "deepseek-v4-pro").replace(
-            /^opencode-go\//,
-            "",
-          )
-        : (process.env.OLLAMA_MODEL ?? "deepseek-v4-pro");
+// Модель/провайдер не приходят в событие — используем тот же строгий выбор, что и runtime.
+const { name: PROVIDER, model: MODEL } = resolveModelProvider();
 
 interface StepData {
   stepIndex: number;

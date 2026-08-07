@@ -246,3 +246,33 @@ test("opencode diagnostics preserve required-key order", async (t) => {
     ".env incomplete, missing: OPENCODE_API_KEY, OPENCODE_MODEL, DEEPGRAM_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_IDS, ASSISTANT_BEARER — run: iva config",
   );
 });
+
+test("doctor rejects an invalid model provider instead of diagnosing Ollama", async (t) => {
+  const root = await sandbox(t);
+  writeFileSync(join(root, ".env"), "MODEL_PROVIDER=ollmaa\n");
+  const failures: string[] = [];
+  const runtime: CliRuntime = {
+    ...createCliRuntime(root),
+    C: NO_COLOR,
+    ok: () => undefined,
+    warn: () => undefined,
+    bad: (message) => failures.push(message),
+    readEnv: () => ({ MODEL_PROVIDER: "ollmaa" }),
+    hasSystemd: () => false,
+  };
+
+  await createDoctorCommand(runtime, lifecycle(), {
+    nodeVersion: "24.0.0",
+    log: () => undefined,
+    exit: () => undefined,
+  })();
+
+  assert.equal(
+    failures[0],
+    'Invalid MODEL_PROVIDER "ollmaa"; expected one of: ollama, opencode, openrouter, codex — run: iva config',
+  );
+  assert.equal(
+    failures.some((message) => message.includes("OLLAMA_")),
+    false,
+  );
+});

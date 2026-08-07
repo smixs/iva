@@ -85,35 +85,45 @@ export function createDoctorCommand(
       bad(".env missing — run: iva config");
       badN++;
     } else {
-      const provider = env.MODEL_PROVIDER || "ollama";
       // codex — доступ по OAuth-токену (data/codex-auth.json), у ollama/opencode — API-ключ в .env.
-      const providerKeys: Record<string, readonly string[]> = {
+      const providerKeys = {
         ollama: ["OLLAMA_API_KEY", "OLLAMA_MODEL"],
         opencode: ["OPENCODE_API_KEY", "OPENCODE_MODEL"],
         openrouter: ["OPENROUTER_API_KEY", "OPENROUTER_MODEL"],
         codex: ["CODEX_MODEL"],
-      };
-      const required = [
-        ...(providerKeys[provider] || providerKeys.ollama),
-        "DEEPGRAM_API_KEY",
-        "TELEGRAM_BOT_TOKEN",
-        "TELEGRAM_ALLOWED_USER_IDS",
-        "ASSISTANT_BEARER",
-      ];
-      const missing = required.filter((key) => !(env[key] || "").trim());
-      if (
-        provider === "codex" &&
-        !existsSync(join(dataDirAbs(env), "codex-auth.json"))
-      )
-        missing.push("OpenAI sign-in (iva login)");
-      if (!missing.length) {
-        ok(`.env filled in (provider: ${provider})`);
-        okN++;
-      } else {
+      } as const;
+      const rawProvider = env.MODEL_PROVIDER ?? "ollama";
+      const provider = Object.hasOwn(providerKeys, rawProvider)
+        ? (rawProvider as keyof typeof providerKeys)
+        : undefined;
+      if (!provider) {
         bad(
-          `.env incomplete, missing: ${missing.join(", ")} — run: iva config`,
+          `Invalid MODEL_PROVIDER ${JSON.stringify(rawProvider)}; expected one of: ${Object.keys(providerKeys).join(", ")} — run: iva config`,
         );
         badN++;
+      } else {
+        const required = [
+          ...providerKeys[provider],
+          "DEEPGRAM_API_KEY",
+          "TELEGRAM_BOT_TOKEN",
+          "TELEGRAM_ALLOWED_USER_IDS",
+          "ASSISTANT_BEARER",
+        ];
+        const missing = required.filter((key) => !(env[key] || "").trim());
+        if (
+          provider === "codex" &&
+          !existsSync(join(dataDirAbs(env), "codex-auth.json"))
+        )
+          missing.push("OpenAI sign-in (iva login)");
+        if (!missing.length) {
+          ok(`.env filled in (provider: ${provider})`);
+          okN++;
+        } else {
+          bad(
+            `.env incomplete, missing: ${missing.join(", ")} — run: iva config`,
+          );
+          badN++;
+        }
       }
       // old .env without IVA_PORT (or with :3000) — migrate right here
       if (migrateEnv()) fixN++;
