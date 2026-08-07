@@ -88,12 +88,11 @@ function usageToday(
 
 // Собирает быстрые поля (без медленной пробы) — переиспользуется первым рендером и async-edit'ом.
 function fastFields(env: Env, ctx: MenuContext) {
-  const provider =
-    typeof env.MODEL_PROVIDER === "string" &&
-    Object.hasOwn(CATALOG, env.MODEL_PROVIDER)
-      ? env.MODEL_PROVIDER
-      : "ollama";
-  const cat = CATALOG[provider as keyof typeof CATALOG];
+  const configuredProvider = env.MODEL_PROVIDER ?? "ollama";
+  const providerIsValid = Object.hasOwn(CATALOG, configuredProvider);
+  const cat = providerIsValid
+    ? CATALOG[configuredProvider as keyof typeof CATALOG]
+    : undefined;
   const searchProv =
     typeof env.SEARCH_PROVIDER === "string" &&
     Object.hasOwn(SEARCH_CATALOG, env.SEARCH_PROVIDER)
@@ -102,9 +101,11 @@ function fastFields(env: Env, ctx: MenuContext) {
   const searchCat = SEARCH_CATALOG[searchProv as keyof typeof SEARCH_CATALOG];
   return {
     version: version(ctx.deps.root),
-    provider,
-    model: env[cat.modelVar] || cat.def,
-    effort: (env.THINKING_EFFORT || "").toLowerCase(),
+    provider: providerIsValid
+      ? configuredProvider
+      : `invalid (${configuredProvider})`,
+    model: cat ? env[cat.modelVar] || cat.def : "?",
+    effort: cat ? (env.THINKING_EFFORT || "").toLowerCase() : "",
     searchProv,
     hasKey: Boolean(searchCat && env[searchCat.keyVar]),
     lang: ctx.getLang(),

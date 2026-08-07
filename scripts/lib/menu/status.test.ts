@@ -124,3 +124,29 @@ test("status does not edit an expired menu after the asynchronous probe settles"
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(edits, 0);
 });
+
+test("status surfaces an invalid model provider instead of presenting Ollama", async () => {
+  const { root, envPath } = await fixture();
+  await writeFile(envPath, "MODEL_PROVIDER=ollmaa\nOLLAMA_MODEL=wrong-model\n");
+  const state: StatusState = { chatId: 1, userId: "2", screen: "st" };
+  const context: StatusContext = {
+    deps: {
+      root,
+      envPath,
+      dataDir: join(root, "data"),
+      probeUserbotHealth: async () => ({ state: "off" }),
+    },
+    flows: {
+      get: () => null,
+      screen: async () => undefined,
+    },
+    getLang: () => "en",
+    tr: (en) => en,
+    btn: (text, callbackData) => ({ text, callback_data: callbackData }),
+    backRow: () => [{ text: "Back", callback_data: "iva_menu:r:o" }],
+  };
+
+  const view = await status.default.render(state, context);
+  assert.match(view.text, /Model: invalid \(ollmaa\) · \?/);
+  assert.doesNotMatch(view.text, /Model: ollama|wrong-model/);
+});
