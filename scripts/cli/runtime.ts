@@ -38,9 +38,19 @@ export function createCliRuntime(root: string) {
   const NPM = existsSync(join(NODE_BIN_DIR, "npm"))
     ? join(NODE_BIN_DIR, "npm")
     : "npm";
+  // Child processes need the same node/npm the CLI itself runs on, so NODE_BIN_DIR goes
+  // in front — but only when PATH does not already contain it. Prepending it a second
+  // time silently reorders PATH: with a system Node in /usr/bin, /usr/bin jumps ahead of
+  // whatever the caller put first, so a stub placed earlier in PATH stops winning. That
+  // is how `scripts/cli/services-entrypoints.test.ts` reached the real systemctl instead
+  // of its own fake and drove live user units.
+  const pathEntries = (process.env.PATH || "").split(":").filter(Boolean);
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `${NODE_BIN_DIR}:${process.env.PATH || ""}`,
+    PATH: (pathEntries.includes(NODE_BIN_DIR)
+      ? pathEntries
+      : [NODE_BIN_DIR, ...pathEntries]
+    ).join(":"),
   };
 
   const SERVICES = ["iva.service", "iva-telegram-poll.service"];

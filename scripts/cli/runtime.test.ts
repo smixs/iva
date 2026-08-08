@@ -259,3 +259,38 @@ test("writeEnvVars deduplicates CRLF input and writes one atomic LF record", asy
   );
   assert.equal(statSync(runtime.ENV_PATH).mode & 0o777, 0o600);
 });
+
+test("childEnv keeps the caller's PATH order when NODE_BIN_DIR is already on it", async (t) => {
+  const root = await sandbox(t);
+  const originalPath = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = originalPath;
+  });
+  const nodeBinDir = dirname(process.execPath);
+  // Both fixture entries live under the sandbox, so neither can accidentally
+  // equal nodeBinDir on a machine that keeps node somewhere unusual.
+  const stubBin = join(root, "stub-bin");
+  const tailBin = join(root, "tail-bin");
+  process.env.PATH = `${stubBin}:${nodeBinDir}:${tailBin}`;
+
+  const entries = (createCliRuntime(root).childEnv.PATH ?? "").split(":");
+
+  // The whole array, not just the head: a dropped or reordered tail entry is
+  // the same defect as a stub that stops winning.
+  assert.deepEqual(entries, [stubBin, nodeBinDir, tailBin]);
+});
+
+test("childEnv prepends NODE_BIN_DIR when PATH does not carry it", async (t) => {
+  const root = await sandbox(t);
+  const originalPath = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = originalPath;
+  });
+  const nodeBinDir = dirname(process.execPath);
+  process.env.PATH = "/nonexistent-a:/nonexistent-b";
+
+  assert.equal(
+    createCliRuntime(root).childEnv.PATH,
+    `${nodeBinDir}:/nonexistent-a:/nonexistent-b`,
+  );
+});
