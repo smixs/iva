@@ -259,3 +259,38 @@ test("writeEnvVars deduplicates CRLF input and writes one atomic LF record", asy
   );
   assert.equal(statSync(runtime.ENV_PATH).mode & 0o777, 0o600);
 });
+
+test("childEnv keeps the caller's PATH order when NODE_BIN_DIR is already on it", async (t) => {
+  const root = await sandbox(t);
+  const originalPath = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = originalPath;
+  });
+  const nodeBinDir = dirname(process.execPath);
+  const stubBin = "/tmp/iva-stub-bin";
+  process.env.PATH = `${stubBin}:${nodeBinDir}:/bin`;
+
+  const entries = (createCliRuntime(root).childEnv.PATH ?? "").split(":");
+
+  assert.equal(
+    entries[0],
+    stubBin,
+    "a stub earlier in PATH must keep winning over the system bin dir",
+  );
+  assert.equal(entries.filter((entry) => entry === nodeBinDir).length, 1);
+});
+
+test("childEnv prepends NODE_BIN_DIR when PATH does not carry it", async (t) => {
+  const root = await sandbox(t);
+  const originalPath = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = originalPath;
+  });
+  const nodeBinDir = dirname(process.execPath);
+  process.env.PATH = "/nonexistent-a:/nonexistent-b";
+
+  assert.equal(
+    createCliRuntime(root).childEnv.PATH,
+    `${nodeBinDir}:/nonexistent-a:/nonexistent-b`,
+  );
+});
