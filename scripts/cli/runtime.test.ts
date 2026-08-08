@@ -267,17 +267,17 @@ test("childEnv keeps the caller's PATH order when NODE_BIN_DIR is already on it"
     process.env.PATH = originalPath;
   });
   const nodeBinDir = dirname(process.execPath);
-  const stubBin = "/tmp/iva-stub-bin";
-  process.env.PATH = `${stubBin}:${nodeBinDir}:/bin`;
+  // Both fixture entries live under the sandbox, so neither can accidentally
+  // equal nodeBinDir on a machine that keeps node somewhere unusual.
+  const stubBin = join(root, "stub-bin");
+  const tailBin = join(root, "tail-bin");
+  process.env.PATH = `${stubBin}:${nodeBinDir}:${tailBin}`;
 
   const entries = (createCliRuntime(root).childEnv.PATH ?? "").split(":");
 
-  assert.equal(
-    entries[0],
-    stubBin,
-    "a stub earlier in PATH must keep winning over the system bin dir",
-  );
-  assert.equal(entries.filter((entry) => entry === nodeBinDir).length, 1);
+  // The whole array, not just the head: a dropped or reordered tail entry is
+  // the same defect as a stub that stops winning.
+  assert.deepEqual(entries, [stubBin, nodeBinDir, tailBin]);
 });
 
 test("childEnv prepends NODE_BIN_DIR when PATH does not carry it", async (t) => {
