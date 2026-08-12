@@ -91,6 +91,37 @@ function asScalarText(value: unknown): string {
     : "";
 }
 
+type TelegramLocation = {
+  readonly latitude: number;
+  readonly longitude: number;
+};
+
+function telegramLocation(raw: TelegramRawMessage): TelegramLocation | null {
+  const location = asRecord(raw.location);
+  const latitude = location?.latitude;
+  const longitude = location?.longitude;
+  if (
+    typeof latitude !== "number" ||
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    typeof longitude !== "number" ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+  return { latitude, longitude };
+}
+
+function telegramLocationContext(raw: TelegramRawMessage): string | null {
+  const location = telegramLocation(raw);
+  return location === null
+    ? null
+    : `[telegram_location]\n${JSON.stringify(location)}`;
+}
+
 // Повторяет дефолтную логику диспатча eve (приваты — всегда; группы — только
 // команда/упоминание/ответ боту; боты и каналы игнорируются).
 function isBotCommand(text: string, bot?: string): boolean {
@@ -149,7 +180,7 @@ function messageViewForRaw(
     raw,
     text: asText(raw.text),
     caption: asText(raw.caption),
-    attachments: raw.location || raw.contact || raw.poll ? [{}] : [],
+    attachments: telegramLocation(raw) || raw.contact || raw.poll ? [{}] : [],
     chat: rawChat
       ? {
           ...message.chat,
@@ -200,7 +231,7 @@ function buildAuth(msg: TelegramInboundMessage): TelegramInboundAuth | null {
 // Локация/контакт/опрос: файла нет, но событие должно остаться в дневнике.
 function appendNonFileParts(parts: readonly TelegramRawMessage[]): void {
   for (const partRaw of parts) {
-    const location = asRecord(partRaw.location);
+    const location = telegramLocation(partRaw);
     const contact = asRecord(partRaw.contact);
     const poll = asRecord(partRaw.poll);
     const nonFile = location
@@ -277,6 +308,8 @@ export async function runTelegramInbound(
   const raw: TelegramRawMessage = message.raw;
   const partsRaw = messageParts(raw);
   const media = mediaFromRaw(raw);
+  const singleLocationContext =
+    partsRaw.length === 1 ? telegramLocationContext(raw) : null;
   appendNonFileParts(partsRaw);
 
   // The allowlist and dispatch decision are complete. Publish the one working
@@ -285,7 +318,12 @@ export async function runTelegramInbound(
     partsRaw.length === 1
       ? media
         ? shouldDispatchMedia(message, effects.botUsername)
-        : shouldDispatch(message, effects.botUsername)
+        : shouldDispatch(
+            singleLocationContext === null
+              ? message
+              : messageViewForRaw(message, raw),
+            effects.botUsername,
+          )
       : partsRaw.some((partRaw) => {
           const partMessage = messageViewForRaw(message, partRaw);
           return mediaFromRaw(partRaw)
@@ -432,6 +470,14 @@ export async function runTelegramInbound(
     return withPre({ auth: buildAuth(message), context: result.context });
   }
 
+  if (singleLocationContext !== null) {
+    await effects.startTyping();
+    return withPre({
+      auth: buildAuth(message),
+      context: [singleLocationContext],
+    });
+  }
+
   // 3. Текстовая реплика юзера → daily (verbatim) + inbound security-гейт.
   if (partsRaw.length === 1) {
     const userText = (message.text || "").trim();
@@ -467,6 +513,12 @@ export async function runTelegramInbound(
     if (partMedia) {
       const result = await processMediaPart(effects, partRaw, partMedia);
       context.push(...result.context);
+      continue;
+    }
+
+    const locationContext = telegramLocationContext(partRaw);
+    if (locationContext !== null) {
+      context.push(locationContext);
       continue;
     }
 

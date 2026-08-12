@@ -160,15 +160,24 @@ function dailyText() {
     .join("\n");
 }
 
-test("location, contact and poll updates append daily data before the no-turn dispatch gate", async () => {
-  const cases: Array<[Message, RegExp]> = [
-    [
-      message({
-        text: undefined,
-        location: { latitude: 41.3, longitude: 69.2 },
-      }),
-      /\[location\]\n41\.3, 69\.2/,
-    ],
+test("location starts a turn with coordinates, while contact and poll stay journal-only", async () => {
+  const location = message({
+    text: undefined,
+    location: { latitude: 41.3, longitude: 69.2 },
+  });
+  const beforeLocation = dailyText();
+  const locationSends = await dispatch(location);
+  assert.equal(locationSends.length, 1);
+  assert.equal(
+    locationSends[0][0].context.at(-1),
+    '[telegram_location]\n{"latitude":41.3,"longitude":69.2}',
+  );
+  assert.match(
+    dailyText().slice(beforeLocation.length),
+    /\[location\]\n41\.3, 69\.2/,
+  );
+
+  const journalOnlyCases: Array<[Message, RegExp]> = [
     [
       message({
         text: undefined,
@@ -186,7 +195,7 @@ test("location, contact and poll updates append daily data before the no-turn di
     ],
   ];
 
-  for (const [raw, pattern] of cases) {
+  for (const [raw, pattern] of journalOnlyCases) {
     const before = dailyText();
     assert.equal((await dispatch(raw)).length, 0);
     assert.match(dailyText().slice(before.length), pattern);

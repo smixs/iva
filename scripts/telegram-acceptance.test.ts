@@ -206,19 +206,19 @@ function productionTelegramDelivery(
   };
 }
 
-test("intentional authored no-send accepts queued location, then the later text keeps FIFO order", async () => {
-  const location = {
+test("intentional authored no-send accepts queued contact, then the later text keeps FIFO order", async () => {
+  const contact = {
     ...privateUpdate(101, undefined),
     message: {
       ...privateUpdate(101, undefined).message,
-      location: { latitude: 41.311, longitude: 69.279 },
+      contact: { first_name: "Ada", phone_number: "+99800" },
     },
   };
   let document = enqueueItem(
-    enqueueItem({ version: 1, queues: {} }, "1:", createQueueItem(location, 1))
+    enqueueItem({ version: 1, queues: {} }, "1:", createQueueItem(contact, 1))
       .document,
     "1:",
-    createQueueItem(privateUpdate(102, "after location"), 2),
+    createQueueItem(privateUpdate(102, "after contact"), 2),
   ).document;
   const sent: number[] = [];
   const deliverImpl = productionTelegramDelivery(
@@ -232,7 +232,7 @@ test("intentional authored no-send accepts queued location, then the later text 
           Object.hasOwn(message.raw, TELEGRAM_QUEUE_RECEIPT_FIELD),
           false,
         );
-        return message.raw.location ? null : { auth: null };
+        return message.raw.contact ? null : { auth: null };
       },
     },
   );

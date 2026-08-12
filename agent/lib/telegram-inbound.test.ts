@@ -167,6 +167,113 @@ await test("чистый личный текст едет к модели без
   assert.match(dailyText(), /hello there/u);
 });
 
+await test("личная геопозиция запускает ход с валидированными координатами", async () => {
+  const { calls, effects } = harness();
+  const result = await inbound.runTelegramInbound(
+    message({
+      message_id: 6,
+      chat: { id: 77, type: "private" },
+      from: { id: 42, is_bot: false },
+      location: { latitude: 55.751244, longitude: 37.618423 },
+    }),
+    effects,
+  );
+
+  assert.deepEqual(result?.context, [
+    '[telegram_location]\n{"latitude":55.751244,"longitude":37.618423}',
+  ]);
+  assert.equal(calls.accepted, 1);
+  assert.equal(calls.typing, 1);
+  assert.match(dailyText(), /\[location\]\n55\.751244, 37\.618423/u);
+});
+
+await test("мусорные координаты не будят модель и не попадают в дневник", async () => {
+  const before = dailyText();
+  const invalidLocations = [
+    { latitude: "55.7", longitude: 37.6 },
+    { latitude: Number.NaN, longitude: 37.6 },
+    { latitude: 55.7, longitude: Number.POSITIVE_INFINITY },
+    { latitude: 91, longitude: 37.6 },
+    { latitude: 55.7, longitude: -181 },
+  ];
+
+  for (const location of invalidLocations) {
+    const { calls, effects } = harness();
+    const result = await inbound.runTelegramInbound(
+      message({
+        message_id: 7,
+        chat: { id: 77, type: "private" },
+        from: { id: 42, is_bot: false },
+        location,
+      }),
+      effects,
+    );
+    assert.equal(result, null);
+    assert.equal(calls.accepted, 0);
+    assert.equal(calls.typing, 0);
+  }
+  assert.equal(dailyText(), before);
+});
+
+await test("геопозиция в группе требует ответа боту", async () => {
+  const raw = {
+    message_id: 8,
+    chat: { id: -77, type: "supergroup" },
+    from: { id: 42, is_bot: false },
+    location: { latitude: 55.75, longitude: 37.62 },
+  };
+  const ignored = harness();
+  assert.equal(
+    await inbound.runTelegramInbound(message(raw), ignored.effects),
+    null,
+  );
+  assert.equal(ignored.calls.accepted, 0);
+
+  const reply = harness();
+  const result = await inbound.runTelegramInbound(
+    message({
+      ...raw,
+      reply_to_message: { from: { id: 1, is_bot: true } },
+    }),
+    reply.effects,
+  );
+  assert.deepEqual(result?.context, [
+    '[telegram_location]\n{"latitude":55.75,"longitude":37.62}',
+  ]);
+  assert.equal(reply.calls.accepted, 1);
+});
+
+await test("геопозиция в собранном burst сохраняет порядок с текстом", async () => {
+  const { effects } = harness();
+  const result = await inbound.runTelegramInbound(
+    message({
+      message_id: 8,
+      chat: { id: 77, type: "private" },
+      from: { id: 42, is_bot: false },
+      iva_parts: [
+        {
+          message_id: 8,
+          chat: { id: 77, type: "private" },
+          from: { id: 42, is_bot: false },
+          location: { latitude: 59.9386, longitude: 30.3141 },
+        },
+        {
+          message_id: 9,
+          chat: { id: 77, type: "private" },
+          from: { id: 42, is_bot: false },
+          text: "what is nearby?",
+        },
+      ],
+    }),
+    effects,
+  );
+
+  assert.deepEqual(result?.context, [
+    '[telegram_location]\n{"latitude":59.9386,"longitude":30.3141}',
+    "what is nearby?",
+  ]);
+});
+
 // Кириллица содержит гомоглифы латиницы, поэтому гейт помечает её lookalikes и
 // отдаёт модели уже нормализованный текст. Пометка не блокирует ход — без
 // предупреждения, но контекстом.
