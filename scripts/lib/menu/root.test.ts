@@ -30,12 +30,13 @@ const englishRows = [
   ],
   [
     ["⏰ Timers", "iva_menu:cron:o"],
-    ["🧩 Skills", "iva_menu:sk:o"],
+    ["🔔 Notices", "iva_menu:ntc:o"],
   ],
   [
+    ["🧩 Skills", "iva_menu:sk:o"],
     ["📊 Status", "iva_menu:st:o"],
-    ["🛠 Maintenance", "iva_menu:svc:o"],
   ],
+  [["🛠 Maintenance", "iva_menu:svc:o"]],
   [["✖ Close", "iva_menu:r:x"]],
 ];
 
@@ -58,12 +59,13 @@ const russianRows = [
   ],
   [
     ["⏰ Кроны", "iva_menu:cron:o"],
-    ["🧩 Скиллы", "iva_menu:sk:o"],
+    ["🔔 Уведомления", "iva_menu:ntc:o"],
   ],
   [
+    ["🧩 Скиллы", "iva_menu:sk:o"],
     ["📊 Статус", "iva_menu:st:o"],
-    ["🛠 Обслуживание", "iva_menu:svc:o"],
   ],
+  [["🛠 Обслуживание", "iva_menu:svc:o"]],
   [["✖ Закрыть", "iva_menu:r:x"]],
 ];
 

@@ -12,8 +12,9 @@ The menu lives in the long-poll bridge, not the agent. That has three consequenc
 [🔍 Search]    [🌐 Language]
 [🎭 Character] [💾 Memory]
 [📡 Userbot]   [🔗 Google]
-[⏰ Timers]    [🧩 Skills]
-[📊 Status]    [🛠 Maintenance]
+[⏰ Timers]    [🔔 Notices]
+[🧩 Skills]    [📊 Status]
+[🛠 Maintenance]
 [✖ Close]
 ```
 
@@ -23,13 +24,14 @@ The menu lives in the long-poll bridge, not the agent. That has three consequenc
 
 Most changes take effect the moment you tap. A few reach into the running agent and need a restart, which the menu offers you on the spot — a plain `iva.service` restart that leaves parked conversations intact (never the full agent reset).
 
-| Screen                      | When it applies                                                    |
-| --------------------------- | ------------------------------------------------------------------ |
-| 🌐 Language                 | Instantly — both processes re-read `data/settings.json` every turn |
-| 🎭 Character                | From Iva's next message — the persona file is read each turn       |
-| 💾 Memory                   | From Iva's next message — she distills your answers into `CORE.md` |
-| 🧠 Model / 🤔 Thinking      | On restart — the wizard offers it                                  |
-| 🔍 Search (provider or key) | On restart — the tool reads keys from the environment              |
+| Screen                      | When it applies                                                             |
+| --------------------------- | --------------------------------------------------------------------------- |
+| 🌐 Language                 | Instantly — both processes re-read `data/settings.json` every turn          |
+| 🔔 Notices                  | From the next scheduled run — the switch is read as that run starts or ends |
+| 🎭 Character                | From Iva's next message — the persona file is read each turn                |
+| 💾 Memory                   | From Iva's next message — she distills your answers into `CORE.md`          |
+| 🧠 Model / 🤔 Thinking      | On restart — the wizard offers it                                           |
+| 🔍 Search (provider or key) | On restart — the tool reads keys from the environment                       |
 
 ## Language
 
@@ -53,6 +55,14 @@ The four letters pick one of **16 fixed, bilingual archetypes** (Big Sister, Mus
 The **💾 Memory** screen shows a short excerpt of your current `CORE.md` and offers a six-question interview: how to address you, what you do, your city/timezone/rhythm, the people and context that matter, your current priorities, and what you never want an assistant to do. Answers are free text; **Skip** and **Finish** are always available.
 
 Your raw answers are archived verbatim to `vault/core-interview.md` (overwritten each run — nothing is ever lost). Then the bridge hands them to Iva as a message from you, asking her to distill them into `vault/CORE.md` (the ≤1,200-char file that rides in every prompt) with her own memory tools, and confirm. This is the one menu action that spends model tokens. How the core compounds: [memory.md](memory.md).
+
+## Notices
+
+Everything Iva sends **on her own** — with no message from you — is a Notice, and there are exactly two kinds. A **Report** is a scheduled summary: the nightly memory report and the morning digest. An **Alert** is trouble that needs your hand: memory that is not being backed up, a nightly pass that failed, a new version to install.
+
+The **🔔 Notices** screen switches the two Reports — _Memory reports_ (nightly, 04:00 and Mon 04:15) and _Morning digest_ (08:00). Both are **off by default**, so a fresh installation says nothing in the morning; the vault is still written and `/digest` still works by hand. A tap writes `data/settings.json`: the report switch is read at the end of each nightly run, the digest switch when its schedule fires — no restart, and a switch flipped tonight applies tonight. Both scheduled turns hand their text to the code that delivers it, so a report arrives as exactly one message ([ADR-0007](adr/0007-notices-are-opt-in.md)).
+
+Alerts — problems and new versions — cannot be switched off, and the screen says so. The price they pay for that: every Alert names what broke, what it costs and the exact command to fix it, and it repeats at most once a week for the same problem — sooner only if the problem changed or came back after a fix. The reasoning: [ADR-0007](adr/0007-notices-are-opt-in.md).
 
 ## API keys and secrets
 

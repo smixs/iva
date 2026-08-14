@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isEntrypoint, upstreamQuery } from "./lib/version-layout.ts";
+import { noticeLang } from "./lib/notice-policy.ts";
 import { acquireUpdateLock } from "./lib/version-store.ts";
 import {
   inspectUpstream,
@@ -62,10 +63,12 @@ export async function runDailyUpdateCheck({
       return { status: "already-notified" as const, info };
     }
 
+    // The update prompt is an Alert (ADR-0007) and speaks the one language the owner picked:
+    // settings.language first, AGENT_LANGUAGE after it — the same resolver the chat uses.
     const offer = updateOffer(
       info.localVersion,
       info.remoteVersion,
-      env.AGENT_LANGUAGE === "ru" ? "ru" : "en",
+      await noticeLang(env),
     );
     await sendImpl({ token, chatId, offer });
     await writeStateImpl(storage, info.remoteVersion);

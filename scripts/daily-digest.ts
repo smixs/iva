@@ -3,6 +3,8 @@
 //
 // Requires: a running agent (eve start) and the TELEGRAM_BOT_TOKEN, TELEGRAM_DIGEST_CHAT_ID variables.
 import { Client } from "eve/client";
+import { tr } from "#lib/i18n.ts";
+import { writtenInLanguage } from "./lib/notice-policy.ts";
 import { sendTelegramHtml } from "./lib/telegram-send.ts";
 
 const PORT = process.env.IVA_PORT ?? "8723";
@@ -22,9 +24,15 @@ const client = new Client({
 });
 
 const session = client.session();
+// The same delivery rule the nightly rollup states, in the same words: this turn's result
+// is delivered by the code below, so a rich message here would be the second message.
+// The red line in agent/instructions.md exempts exactly these two scheduled turns.
 const response = await session.send(
   "Load the morning-digest skill and build the morning digest for my tasks. " +
-    "Return only the finished digest text, no preamble.",
+    `Return the digest ${writtenInLanguage(tr)}. ` +
+    "Return the digest as the final text of this turn. Do not send it anywhere yourself: " +
+    "no rich messages, no digest chat, no Telegram tools. " +
+    "Only the finished digest text, no preamble.",
 );
 const result = await response.result();
 

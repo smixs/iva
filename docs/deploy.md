@@ -72,13 +72,13 @@ ASSISTANT_TIMEZONE="$(node --env-file=.env -p 'process.env.ASSISTANT_TIMEZONE ||
 
 The four memory-rollup cadences moved off systemd and run as `agent/schedules/*.ts` — eve's native `defineSchedule` API — inside the `iva.service` process itself:
 
-| Schedule         | Cron (local time)           | Job                                                                                              |
-| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
-| `memory-daily`   | `0 4 * * *` (04:00 nightly) | transcript → cards + daily summary, report to Telegram                                           |
-| `memory-weekly`  | `15 4 * * 1` (Mon 04:15)    | 7 dailies → weekly summary, report to Telegram                                                   |
-| `memory-monthly` | `20 4 1 * *` (1st, 04:20)   | weeklies → monthly summary (silent)                                                              |
-| `memory-yearly`  | `25 4 1 1 *` (Jan 1, 04:25) | monthlies → yearly summary (silent)                                                              |
-| `digest`         | `0 8 * * *` (08:00 daily)   | morning digest — **off by default**, enable via `digestSchedule.enabled` in `data/settings.json` |
+| Schedule         | Cron (local time)           | Job                                                                                                                                |
+| ---------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `memory-daily`   | `0 4 * * *` (04:00 nightly) | transcript → cards + daily summary; Telegram report **off by default**, enable via `memoryReports.enabled` in `data/settings.json` |
+| `memory-weekly`  | `15 4 * * 1` (Mon 04:15)    | 7 dailies → weekly summary; same report switch as `memory-daily`                                                                   |
+| `memory-monthly` | `20 4 1 * *` (1st, 04:20)   | weeklies → monthly summary (silent)                                                                                                |
+| `memory-yearly`  | `25 4 1 1 *` (Jan 1, 04:25) | monthlies → yearly summary (silent)                                                                                                |
+| `digest`         | `0 8 * * *` (08:00 daily)   | morning digest — **off by default**, enable via `digestSchedule.enabled` in `data/settings.json`                                   |
 
 Each one is a thin spawner (`agent/lib/schedule-runner.ts`): it runs the exact same command the old timer did (`flock -w 900 .memory.lock node --env-file=.env scripts/memory/rollup.ts <period>`), under a hard timeout, and records the outcome to `data/rollup-status.json`. `iva.service` sets `Environment=TZ` from `ASSISTANT_TIMEZONE` (`ivaServiceBody()` in `scripts/cli/systemd.ts`), so cron expressions above tick in the configured local time, not the host's system TZ — Nitro's schedule runner carries no timezone of its own otherwise.
 

@@ -2,6 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createFlows } from "../tg-flow.ts";
+import { SCREENS } from "./index.ts";
+import root from "./root.ts";
 
 type Params = {
   message_id?: number;
@@ -407,4 +409,38 @@ test("onText: команда прерывает ожидание (flows.end), о
   );
   assert.equal(flows.get(10, "20"), null); // стейт снят
   assert.equal(log.texts.length, 0);
+});
+
+// Кнопка корня, чей sid не зарегистрирован в SCREENS, в Telegram превращается в вечный
+// спиннер: движок гасит спиннер, ищет экран, не находит и молча выходит. Ни tsgo, ни линт
+// этого не видят — sid живёт в строке callback_data. Проверяется весь корень разом.
+test("every button on the root screen resolves to a registered screen", () => {
+  const view = root.render(
+    {},
+    {
+      tr: (_english: string, russian: string) => russian,
+      btn: (text: string, callback_data: string) => ({ text, callback_data }),
+    },
+  );
+
+  // Псевдо-sid — хендофф в визарды /model и /think, их обрабатывает сам движок (index.ts).
+  const known = new Set([...Object.keys(SCREENS), "mdl", "thk"]);
+  const sids = view.rows
+    .flat()
+    .map((button: { callback_data: string }) => button.callback_data)
+    .map((data: string) => data.replace(/^iva_menu:/u, "").split(":")[0]);
+
+  assert.ok(sids.length > 0, "the root screen must have buttons at all");
+  for (const sid of sids)
+    assert.ok(
+      known.has(sid),
+      `root offers "${sid}", which no screen in SCREENS answers — the button would spin forever`,
+    );
+  // И наоборот: экран, до которого из корня не дойти, — мёртвый код в реестре.
+  const reachable = new Set(sids);
+  for (const sid of Object.keys(SCREENS))
+    assert.ok(
+      reachable.has(sid),
+      `SCREENS holds "${sid}", but no root button leads there`,
+    );
 });

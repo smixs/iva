@@ -12,6 +12,14 @@ import { fileURLToPath } from "node:url";
 import { Client, type MessageResult, type SessionState } from "eve/client";
 import { CORE_CAP } from "#lib/core-cap.ts";
 import { writeFileAtomicSync } from "#lib/fs-atomic.ts";
+import { tr } from "#lib/i18n.ts";
+import { readSettings } from "#lib/settings.ts";
+import {
+  deliverMemoryReport,
+  memoryReportTail,
+  memoryReportsEnabled,
+  rollupRanBefore,
+} from "../lib/notice-policy.ts";
 import { notificationChat } from "../lib/notification-chat.ts";
 import {
   cancelTurnAndConfirmQuietly,
@@ -48,8 +56,10 @@ const INSTRUCTIONS = resolve(
   "instructions",
 );
 
-// daily/weekly reports go to Telegram; monthly/yearly are silent (vault only).
-const POST_TO_TELEGRAM: Record<Period, boolean> = {
+// daily/weekly may carry a Report to Telegram; monthly/yearly are silent by design (vault
+// only). Whether the Report actually goes out is the owner's switch, read at the end of the
+// run — a toggle flipped tonight applies tonight, with no restart (ADR-0007).
+const REPORTS_TO_TELEGRAM: Record<Period, boolean> = {
   daily: true,
   weekly: true,
   monthly: false,
@@ -90,9 +100,9 @@ function buildPrompt(p: Period, now: string): string {
     `instructions in ${INSTRUCTIONS}/memory-processor/. ` +
     `Do not invent facts — take them from the source files. `;
 
-  const tail =
-    `At the end, return a SHORT report in plain text (no markdown tables): what was created/updated, ` +
-    `key topics and links between cards. Only the finished report, with no preamble or reasoning.`;
+  // Delivery half of the prompt: language, human wording, no self-delivery. Built per call,
+  // so a language switched in /menu applies to the next night without a restart.
+  const tail = memoryReportTail(tr);
 
   switch (p) {
     case "daily":
@@ -176,6 +186,12 @@ const client = new Client({
 const DATA_DIR = process.env.ASSISTANT_DATA_DIR ?? "data";
 const SESSION_FILE = join(DATA_DIR, `rollup-session-${period}.json`);
 const SESSION_TTL_MS = 90 * 24 * 3600 * 1000;
+// Did a rollup ever run on this installation? Read here, before this run leaves traces of
+// its own, and read from every trace at once (cursors of all four periods, the schedule
+// status file, daily summaries in the vault) — a single cursor is not enough, dropHungSession
+// deletes it. It separates an installation that used to get the morning report from a fresh
+// one, which has nothing to miss and must hear nothing. Best-effort by design: ADR-0007.
+const RAN_BEFORE = rollupRanBefore(DATA_DIR, VAULT);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -400,16 +416,49 @@ if (period === "daily") {
 
 console.log(`rollup ${period} (${today}):\n${result.message}`);
 
-// Telegram report only for daily/weekly.
-if (POST_TO_TELEGRAM[period]) {
-  if (!BOT || !CHAT) {
+// Telegram report only for daily/weekly, and only when the owner turned Reports on. What
+// leaves the chat is one decision, taken in the policy module and proven there by test:
+// the report, or — once in the life of an installation that used to get it — the notice
+// that reports are now off. Never both, never twice.
+if (REPORTS_TO_TELEGRAM[period]) {
+  const settings = readSettings();
+  // markdown → Telegram-HTML conversion, chunking, the outbound Gate and the self-heal all
+  // live in the shared seam. No token or chat means no seam — and the policy still decides
+  // the one-time notice, so a chat configured later cannot revive a question already closed.
+  const send =
+    BOT && CHAT
+      ? {
+          report: (text: string) => sendTelegramHtml(BOT, CHAT, text),
+          notice: (text: string) => sendTelegramHtml(BOT, CHAT, text),
+        }
+      : null;
+  if (!send && memoryReportsEnabled(settings)) {
     console.error(
       `rollup ${period}: no TELEGRAM_BOT_TOKEN/TELEGRAM_DIGEST_CHAT_ID — report not sent`,
     );
     process.exit(1);
   }
-  // markdown → Telegram-HTML conversion + self-heal live in a shared helper.
-  const r = await sendTelegramHtml(BOT, CHAT, result.message);
+  const delivery = await deliverMemoryReport({
+    dataDir: DATA_DIR,
+    settings,
+    ranBefore: RAN_BEFORE,
+    report: result.message,
+    tr,
+    send,
+  });
+  if (delivery.status === "off") {
+    if (delivery.notice === "sent")
+      console.log(`rollup ${period}: told the chat that reports are now off`);
+    if (delivery.notice === "failed")
+      console.error(
+        `rollup ${period}: could not deliver the reports-off notice`,
+      );
+    console.log(
+      `rollup ${period}: memory reports are off — the report stays in the log`,
+    );
+    process.exit(0);
+  }
+  const r = delivery;
   if (r.fellBack) {
     // HTML didn't parse — the report went out flat. Give the agent feedback in the same
     // session so it formats the next report more simply (one turn, no resend).
@@ -433,7 +482,7 @@ if (POST_TO_TELEGRAM[period]) {
         await dropHungSession("format-feedback");
     }
   }
-  if (!r.ok) {
+  if (r.status === "failed") {
     console.error(`rollup ${period}: Telegram send failed:`, r.error);
     process.exit(1);
   }

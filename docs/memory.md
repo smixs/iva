@@ -27,7 +27,7 @@ One script, four in-process eve schedules, configured local time. `scripts/memor
 | monthly  | 1st, 04:20   | the month's weeklies       | monthly summary               |
 | yearly   | Jan 1, 04:25 | the year's monthlies       | yearly summary                |
 
-Daily and weekly runs post a report to Telegram; monthly and yearly run silent.
+Every run is silent by default: the vault is written, the chat stays quiet. Daily and weekly runs can post a report to Telegram — switch it on in `/menu` → **🔔 Notices** → _Memory reports_ (`memoryReports.enabled` in `data/settings.json`, read at the end of each nightly run, so a tap applies the same night with no restart). Monthly and yearly are always silent. When the report is on, it comes as one short human note in your interface language — what Iva remembered, in 3–5 lines, with no internal terms. Why off by default: [ADR-0007](adr/0007-notices-are-opt-in.md).
 
 The daily pass extracts entities through `write_card` — a tool whose type and status enums come from the vault's `schema.json`, so the model cannot invent card types. Every fact gets one operation:
 
@@ -48,7 +48,7 @@ For fuzzy or cross-language semantics, switch on hybrid mode (`MEMORY_SEARCH_MOD
 
 ## Brain
 
-At 05:00 `scripts/memory/doctor.ts` runs mechanical maintenance — no LLM, all deterministic — executing the [autograph](https://github.com/smixs/autograph) scripts from `scripts/autograph/` via `uv`:
+At 05:00 `scripts/memory/brain.ts` runs mechanical maintenance — no LLM, all deterministic — executing the [autograph](https://github.com/smixs/autograph) scripts from `scripts/autograph/` via `uv`:
 
 1. `enforce` — schema backstop: coerces type aliases, fixes invalid statuses, backfills system fields on cards written outside `write_card`
 2. `graph.health` — rebuilds the link graph, appends a 0–100 health score to history
@@ -56,7 +56,7 @@ At 05:00 `scripts/memory/doctor.ts` runs mechanical maintenance — no LLM, all 
 4. `moc.generate` — regenerates the MOC topic indexes
 5. `supersede`, `dedup`, `link_cleanup` — dry-run scans; findings queue for the next rollup, never auto-applied
 
-Then it commits and pushes the vault. No remote yet? It creates a private `iva-vault` GitHub repo through `gh`. It pings you on Telegram only when a human is needed: a failed maintenance step, a health-score drop, CORE.md past its 1200-char cap, or a failed push (including when there's no remote and `gh` isn't logged in).
+Then it commits and pushes the vault. No remote yet? It creates a private `iva-vault` GitHub repo through `gh`. It pings you on Telegram only when a human is needed: a failed maintenance step, a health-score drop, CORE.md past its 1200-char cap, or a failed push (including when there's no remote and `gh` isn't logged in). Those pings are Alerts — they cannot be switched off, so each one names what broke, what it costs and the command that fixes it, in your language, and repeats at most once a week for the same problem ([ADR-0007](adr/0007-notices-are-opt-in.md)).
 
 ## Vault layout
 

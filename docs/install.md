@@ -21,6 +21,18 @@ Everything between `curl` and a working bot. One command on a fresh server: the 
 >
 > Then run the installer again.
 
+## Step 0 (optional): prepare a fresh VPS
+
+Brand-new server, still logged in as `root`? One command gets it ready — run it **as root**, before anything else:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/bootstrap.sh)
+```
+
+It asks three things up front — a login, its password, and the timezone — then: updates the system, installs Iva's system packages (`git gh python3 ffmpeg pandoc poppler-utils`), creates that user with sudo and systemd lingering already enabled, turns on a firewall that allows SSH only, starts fail2ban and unattended security upgrades, and hardens sshd last — with a reload, so the session you're typing in is never dropped. Every step is detect-then-skip, so re-running it is safe. It ends by printing the `ssh` and `install.sh` commands to run next. Log: `/var/log/iva-bootstrap.log`.
+
+No SSH key is involved: you log in as the new user with the password you just set, and hardening stops at `PermitRootLogin no`. Headless runs take `--non-interactive` with `IVA_USER` and `IVA_PASS`, plus optional `IVA_PUBKEY` (authorizes a key), `IVA_TZ` and `IVA_DISABLE_PASSWORD_AUTH` (key-only login — ignored without a valid key).
+
 ## Install
 
 ```bash

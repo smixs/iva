@@ -106,12 +106,13 @@ existing self-hosted installs with long-lived Telegram/rollup sessions, but it o
 out of a framework-owned cleanup mechanism. Revisit deliberately once Iva has its own
 session-retirement story, rather than leaving the override in place indefinitely.
 
-## 7. Opt-in UI for the digest cron
+## 7. Opt-in UI for the digest cron — CLOSED
 
-`agent/schedules/digest.ts` exists now (off by default, reads `digestSchedule.enabled`
-from `data/settings.json` at fire time), but there's still no menu-driven opt-in/opt-out
-— enabling or disabling it is a raw `settings.json` edit. Worth exposing in `/menu`
-alongside the other settings.
+`/menu` → **🔔 Notices** (`scripts/lib/menu/notices.ts`) switches both scheduled Reports —
+the morning digest (`digestSchedule.enabled`) and the nightly memory reports
+(`memoryReports.enabled`) — so neither needs a raw `settings.json` edit. Both keys are read
+at fire time, so a tap applies on the next tick with no restart. The rule the screen
+enforces: ADR-0007.
 
 ## 8. TypeScript-only Node source
 

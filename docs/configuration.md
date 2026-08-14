@@ -78,6 +78,17 @@ No key for the active provider means `web_search` returns a clear error — noth
 
 The nightly Brain pass builds the hybrid index; to build it now, run `node --env-file=.env scripts/memory/embed-index.ts`. How search actually works: [memory.md](./memory.md).
 
+## Notices
+
+What Iva says on her own lives in `data/settings.json`, not in `.env` — the **🔔 Notices** screen in `/menu` writes these keys, and the report switch is read at the end of each nightly run, the digest switch when its schedule fires — so a tap applies without a restart.
+
+| Key                      | Default | Notes                                                                                                           |
+| ------------------------ | ------- | --------------------------------------------------------------------------------------------------------------- |
+| `memoryReports.enabled`  | `false` | The nightly memory report (daily 04:00 and weekly Mon 04:15) in Telegram. Off means the vault is still written. |
+| `digestSchedule.enabled` | `false` | The morning digest at 08:00. `/digest` works by hand either way.                                                |
+
+Alerts — problems (memory not backed up, a failed nightly pass) and new versions — always arrive: they cannot be switched off, but each one says what to do and repeats at most once a week per problem — [ADR-0007](./adr/0007-notices-are-opt-in.md).
+
 ## System
 
 | Variable                   | Default                        | Notes                                                                                                                                                                                                                                                                                                          |

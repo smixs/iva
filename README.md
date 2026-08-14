@@ -113,6 +113,8 @@ curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh | bash
 2. Run the installer and answer its questions.
 3. Message your bot. The wizard picks your Telegram ID out of that message, finishes setup, and Iva confirms right in the chat that it's live.
 
+Brand-new VPS, still logged in as root? Run `bash <(curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/bootstrap.sh)` first: it creates your sudo user (with lingering enabled), updates the box, and turns on a firewall, fail2ban and SSH hardening. It asks three things — a login, its password, and the timezone — and no SSH key. Then log in as that user with that password and run the installer above. Details: [docs/install.md](docs/install.md).
+
 Install as a normal user, not as root — Iva's shell tool runs as whoever installed it. Headless installs take `--skip-setup` or `--non-interactive`. Prefer to read before you run? Fetch it with `curl -fsSL https://raw.githubusercontent.com/smixs/iva/main/install.sh -o install.sh`, read it, then `bash install.sh`. Wizard walkthrough and an SSH primer for first-time VPS owners: [docs/install.md](docs/install.md).
 
 ### The first minute
@@ -143,12 +145,12 @@ Four model providers. Pick one and fill its block in `.env`:
 
 | Provider         | How you pay                            |
 | ---------------- | -------------------------------------- |
-| OpenCode Go      | API key, ~$5/mo                        |
+| OpenCode Go      | API key, ~$10/mo ($5 first month)      |
 | Ollama Cloud     | API key, ~$20/mo                       |
 | OpenRouter       | API key, pay-as-you-go, 300+ models    |
 | OpenAI (ChatGPT) | your Plus/Pro subscription, no API key |
 
-Default model is deepseek-v4-pro, 131k context. On Go it runs about $9/mo all-in ($5 model + $4–5 VPS), no markup; voice rides Deepgram's free starter credit. Model lists, limits and the search matrix: [docs/providers.md](docs/providers.md).
+Default model is deepseek-v4-pro, 131k context. On Go it runs about $14–15/mo all-in ($10 model + $4–5 VPS; the model's first month is $5), no markup; voice rides Deepgram's free starter credit. Model lists, limits and the search matrix: [docs/providers.md](docs/providers.md).
 
 ## Documentation
 
@@ -159,7 +161,15 @@ Default model is deepseek-v4-pro, 131k context. On Go it runs about $9/mo all-in
 ## What's New
 
 <details>
-<summary><b>v0.3.19 · 12.08.2026 — expand the latest releases</b></summary>
+<summary><b>v0.3.20 · 14.08.2026 — expand the latest releases</b></summary>
+
+### 14.08.2026
+
+#### v0.3.20
+
+- Morning memory reports no longer arrive unasked: the nightly pass writes the vault silently. The report switch lives in `/menu` → 🔔 Notices, next to the morning digest switch, and applies the same night. An installation that used to get the report hears once where to turn it back on.
+- Every message Iva sends on her own now speaks one language — the one you picked. The report became a human note: 3-5 lines about what she remembered, no internal jargon.
+- Alerts now say what broke, what it costs and what to do. The same problem repeats at most once a week; a problem that changed or came back speaks at once.
 
 ### 12.08.2026
 
@@ -180,20 +190,6 @@ Default model is deepseek-v4-pro, 131k context. On Go it runs about $9/mo all-in
 - Nothing Iva sends to Telegram goes around the secret filter any more. Service notices used to slip past it, so a key printed by a failed provider call or by `iva doctor` could reach your chat in full; the filter now sits on every outgoing call and knows the key formats providers actually issue, including credentials hidden inside a URL.
 - An update no longer fails because a port was taken: the health check moves on to the next one instead of dying on a port someone else grabbed a moment earlier.
 - Every write to your data goes through one tested implementation, so a server killed mid-write leaves neither half a card nor a stuck lock behind.
-
-### 10.08.2026
-
-#### v0.3.16
-
-- ⚠️ Updating clears the context of your open Telegram chats once, and Iva starts the conversation from a blank slate. Memory, notes and cards are untouched — only the thread of the current chat is lost.
-- Iva now runs on eve 0.30.8. localDev permissions come from the deployment itself rather than the request's Host header, so a loopback Host spoofed from outside opens nothing, and Iva's own gate is still there on top of it.
-- Skills install from a registry with one command (`eve add @skills/<name>`), a `SKILL.md` written for another agent is taken as is with no frontmatter wrangling, and dev builds are faster.
-
-#### v0.3.15
-
-- An update is now built next to the running version instead of on top of it: the new version is health-checked on its final paths before anything switches, and activation is a single flip. An update that breaks off halfway leaves your working install untouched, and `iva rollback` puts the previous version back.
-- Your data (`data/`, `vault/`, `.env`) now lives outside the code, and your own files in `data/custom` are applied when a version is built — a broken customization no longer takes the service down; Iva starts on the stock build and tells you about it.
-- Memory cards keep an honest archive: history and log lines are written by the tool alone, so the model can't invent a past that never happened; repeated or stale rewrites are refused instead of piling up duplicates, and the nightly Brain pass names the cards left with an open code fence.
 
 </details>
 

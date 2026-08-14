@@ -29,6 +29,16 @@ UPDATE_CHANNEL="$BRANCH"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/iva}"
 NODE_MAJOR_MIN=24
 
+# Every apt run below has to be unattended. On Ubuntu 24.04 with a pending kernel upgrade,
+# needrestart draws an ncurses "Pending kernel upgrade" dialog and dpkg asks about modified
+# config files — both are painted into INSTALL_LOG behind the spinner, where nobody can see
+# them or press Ok, so the install hangs forever ("stuck on Chromium").
+# Exported for the root path and for child processes. sudo does NOT carry them across
+# (env_reset, and neither name is in its default env_keep), so the sudo path gets them
+# injected explicitly — see apt_get() next to run_root below.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 if [ -n "${NO_COLOR:-}" ] || [ "${TERM:-}" = dumb ]; then
   c_blue=""; c_green=""; c_yellow=""; c_red=""; c_bold=""; c_reset=""
 else
@@ -49,7 +59,7 @@ t() { if [ "$IVA_LANG" = ru ]; then printf '%s' "$2"; else printf '%s' "$1"; fi;
 INSTALL_LOG="${TMPDIR:-/tmp}/iva-install-$$.log"
 SPINNER_PID=""
 spinner_enabled() {
-  [ -t 1 ] && [ "${IVA_NO_ANIM:-0}" != 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb
+  [ -t 1 ] && [ "${IVA_NO_ANIM:-0}" != 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]
 }
 stop_spinner() {
   if [ -n "$SPINNER_PID" ]; then
@@ -219,8 +229,21 @@ pick_language   # ← first question: language (default English), before any ins
 echo "  ${c_green}Iva${c_reset} — $(t "your personal long-term-memory agent that just works" "личный агент с долговременной памятью, который просто работает")"
 echo "  ─────────────────────────────────────────────"
 
+# A pending reboot is a dead end, not a warning. needrestart draws its ncurses dialog
+# inside every apt run below — including the ones agent-browser makes on its own, where
+# the environment above cannot reach — and the install stops there forever. Stop now,
+# while the fix is still one command. bootstrap.sh offers this reboot at its end.
+if [ -e /var/run/reboot-required ]; then
+  die "$(t "The kernel was updated but the server has not been rebooted, and package installs will hang. Run: sudo reboot — then reconnect and run this installer again." "Ядро обновилось, но сервер не перезагружен — установка пакетов зависнет. Выполните: sudo reboot — потом переподключитесь и запустите установщик снова.")"
+fi
+
 # root runs directly; otherwise via sudo (cache the password once).
 run_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
+
+# apt through plain run_root would lose DEBIAN_FRONTEND/NEEDRESTART_MODE the moment sudo
+# resets the environment, so pass them through `env` — which runs as root and hands them
+# straight to apt-get. Use this for every apt-get call, never run_root apt-get.
+apt_get() { run_root env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get "$@"; }
 
 # ── Swap for weak VPSes ($4 DigitalOcean droplet = 512MB RAM) ──────────────
 # On low RAM without swap, npm install and especially `eve build` (rolldown+nitro+node)
@@ -289,7 +312,7 @@ if [ "${#need_pkgs[@]}" -gt 0 ]; then
     fi
     case "$PM" in
       apt)
-        run_root apt-get update -qq || warn "$(t "apt-get update failed" "apt-get update не прошёл")"
+        apt_get update -qq || warn "$(t "apt-get update failed" "apt-get update не прошёл")"
         for p in "${need_pkgs[@]}"; do
           if [ "$p" = "gh" ]; then
             # gh isn't in the base Debian/Ubuntu repos — add the official source.
@@ -299,10 +322,10 @@ if [ "${#need_pkgs[@]}" -gt 0 ]; then
             run_root chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
               | run_root tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-            run_root apt-get update -qq
-            run_root apt-get install -y -qq gh || warn "$(t "couldn't install gh" "не удалось поставить gh")"
+            apt_get update -qq
+            apt_get install -y -qq gh || warn "$(t "couldn't install gh" "не удалось поставить gh")"
           else
-            run_root apt-get install -y -qq "$p" || warn "$(t "couldn't install $p" "не удалось поставить $p")"
+            apt_get install -y -qq "$p" || warn "$(t "couldn't install $p" "не удалось поставить $p")"
           fi
         done
         ;;

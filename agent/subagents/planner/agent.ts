@@ -1,24 +1,20 @@
 import { defineAgent } from "eve";
 import { z } from "zod";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { withReasoningStripped } from "../../provider.js";
+import {
+  providerConfig as cfg,
+  makeTextModel,
+  withReasoningStripped,
+} from "../../provider.js";
 
-const ollama = createOpenAICompatible({
-  name: "ollama-cloud",
-  baseURL: "https://ollama.com/v1",
-  apiKey: process.env.OLLAMA_API_KEY,
-  includeUsage: true, // иначе step.completed приходит без usage — см. agent/agent.ts
-});
-
-const MODEL = process.env.OLLAMA_MODEL ?? "deepseek-v4-pro";
-const CONTEXT_WINDOW = Number(process.env.OLLAMA_CONTEXT_WINDOW ?? 131072);
+// Субагенты всегда работают на модели основного провайдера (MODEL_PROVIDER), а не на своей.
+// Локальных провайдеров и собственных env в субагентах не заводим — источник один: provider.ts.
 
 export default defineAgent({
   description:
     "Разбивает крупную цель пользователя на конкретные выполнимые шаги. " +
     "Делегируй сюда, когда задача большая и её нужно декомпозировать на план.",
-  model: withReasoningStripped(ollama(MODEL)),
-  modelContextWindowTokens: CONTEXT_WINDOW,
+  model: withReasoningStripped(makeTextModel()),
+  modelContextWindowTokens: cfg.contextWindow,
   // Task-mode: при делегировании возвращает структурированный план.
   outputSchema: z.object({
     goal: z.string(),

@@ -1,5 +1,6 @@
 import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { CODEX_BASE_URL, codexAuthHeaders } from "./lib/codex-auth.ts";
 import { CANONICAL_REASONING_EFFORTS as EFFORTS } from "./lib/reasoning-levels.ts";
 
@@ -164,6 +165,25 @@ export function makeCodexModel(model: string = providerConfig.textModel) {
     model: openai.responses(model),
     middleware: codexProviderOptions,
   });
+}
+
+/**
+ * Текстовая модель активного провайдера. Общая для КАЖДОГО узла графа: корень и субагенты
+ * обязаны говорить с одним провайдером, свои createOpenAICompatible/env в субагентах не заводим.
+ */
+export function makeTextModel() {
+  // Codex-подписка говорит на Responses API — отдельная модель-фабрика (@ai-sdk/openai).
+  // Остальные провайдеры — OpenAI-совместимый chat/completions через openai-compatible.
+  if (providerName === "codex") return makeCodexModel();
+  return createOpenAICompatible({
+    name: `iva-${providerName}`,
+    baseURL: providerConfig.baseURL,
+    apiKey: providerConfig.apiKey,
+    // Без этого стрим OpenAI-совместимых провайдеров НЕ несёт usage (нет stream_options:
+    // {include_usage:true}) → событие step.completed приходит без поля usage, и учёт токенов
+    // (agent/hooks/usage.ts) пуст. Включаем, чтобы провайдер отдавал расход в финальном чанке.
+    includeUsage: true,
+  })(providerConfig.textModel);
 }
 
 // --- Анти-InvalidPrompt: срезаем reasoning из вывода модели ---------------------------------

@@ -130,6 +130,13 @@ export function createCliSystemd(runtime: CliRuntime) {
       `Environment=TZ=${timezone}`,
       `Environment=PATH=${NODE_BIN_DIR}:%h/.local/bin:/usr/local/bin:/usr/bin:/bin`,
       "Environment=AGENT_BROWSER_MAX_OUTPUT=24000",
+      // world-local queue delivers turnWorkflow messages via an HTTP self-call guarded by
+      // undici headers/body timeouts that default to 30 seconds; any agent turn longer than
+      // that gets falsely marked undelivered and redelivered while the original handler is
+      // still running — two concurrent turns, two slightly different Telegram replies.
+      // One hour matches the longest tool-heavy turns.
+      "Environment=WORKFLOW_LOCAL_HEADERS_TIMEOUT_MS=3600000",
+      "Environment=WORKFLOW_LOCAL_BODY_TIMEOUT_MS=3600000",
       "Restart=always",
       "",
       "[Install]",

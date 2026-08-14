@@ -169,7 +169,7 @@ export function updateOffer(
   const ru = locale === "ru";
   return {
     text: ru
-      ? `⬆️ Доступна новая версия Iva\n\nv${localVersion} → v${remoteVersion}\nНастройки и локальные изменения будут сохранены.`
+      ? `⬆️ Доступна новая версия Ивы\n\nv${localVersion} → v${remoteVersion}\nНастройки и локальные изменения будут сохранены.`
       : `⬆️ A new Iva version is available\n\nv${localVersion} → v${remoteVersion}\nSettings and local changes will be preserved.`,
     replyMarkup: {
       inline_keyboard: [
