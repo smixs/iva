@@ -213,6 +213,29 @@ await test("пустая расшифровка голосового ведёт 
   assert.doesNotMatch(part.context[0], /documents/u);
 });
 
+await test("includeCarrierAsCaption false drops both carrier and raw caption", async (t) => {
+  stubDownload(t);
+  const { effects } = harness();
+  const part = await media.processMediaPart(
+    effects,
+    { message_id: 8, caption: "raw caption must not appear" },
+    photo(),
+    {
+      caption: {
+        source: "message.caption",
+        rawVerbatim: "carrier caption must not appear",
+        normalized: "carrier caption must not appear",
+      },
+      includeCarrierAsCaption: false,
+    },
+  );
+
+  assert.equal(part.kind, "context");
+  const joined = part.context.join("\n");
+  assert.equal(joined.includes("raw caption must not appear"), false);
+  assert.equal(joined.includes("carrier caption must not appear"), false);
+});
+
 await test("документ без расшифровки по-прежнему идёт в скилл documents", async (t) => {
   stubDownload(t);
   const { effects } = harness();
@@ -247,4 +270,64 @@ await test("транскрипт с override-фразой едет с помет
       line.includes("[security] inbound transcript flagged:"),
     ),
   );
+});
+
+await test("oversized file notice mentions a saved caption only when one was kept", async () => {
+  const { calls, effects } = harness({
+    request: () =>
+      Promise.resolve({ body: { description: "File is too big" } }),
+  });
+  const part = await media.processMediaPart(
+    effects,
+    { message_id: 9, caption: "keep me" },
+    doc(),
+    {
+      caption: {
+        source: "message.caption",
+        rawVerbatim: "keep me",
+        normalized: "keep me",
+      },
+    },
+  );
+  assert.equal(part.kind, "too-big");
+  assert.equal(calls.sent.length, 1);
+  assert.match(calls.sent[0], /I saved the caption/u);
+  assert.match(calls.sent[0], /Send the file another way/u);
+  assert.ok(part.context.some((line) => line.includes("keep me")));
+});
+
+await test("oversized file notice omits the saved-caption clause when caption is empty", async () => {
+  const { calls, effects } = harness({
+    request: () =>
+      Promise.resolve({ body: { description: "File is too big" } }),
+  });
+  const part = await media.processMediaPart(effects, { message_id: 10 }, doc());
+  assert.equal(part.kind, "too-big");
+  assert.equal(calls.sent.length, 1);
+  assert.doesNotMatch(calls.sent[0], /I saved the caption/u);
+  assert.match(calls.sent[0], /Send the file another way/u);
+});
+
+await test("oversized file notice omits the saved-caption clause when carrier is not the caption", async () => {
+  const { calls, effects } = harness({
+    request: () =>
+      Promise.resolve({ body: { description: "File is too big" } }),
+  });
+  const part = await media.processMediaPart(
+    effects,
+    { message_id: 11, caption: "raw caption must not appear" },
+    photo(),
+    {
+      caption: {
+        source: "message.caption",
+        rawVerbatim: "carrier caption must not appear",
+        normalized: "carrier caption must not appear",
+      },
+      includeCarrierAsCaption: false,
+    },
+  );
+  assert.equal(part.kind, "too-big");
+  assert.equal(calls.sent.length, 1);
+  assert.doesNotMatch(calls.sent[0], /I saved the caption/u);
+  assert.doesNotMatch(calls.sent[0], /carrier caption must not appear/u);
 });

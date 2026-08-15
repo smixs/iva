@@ -19,15 +19,33 @@ import {
 import {
   mediaFromRaw,
   messageParts,
+  type TelegramRawMedia,
   type TelegramRawMessage,
 } from "./telegram-parts.ts";
+import {
+  extractRichMessageArchivalText,
+  extractRichMessagePhotos,
+  extractRichMessageSafeModelText,
+} from "./telegram-rich-message.ts";
+import {
+  assembleFullInboundText,
+  assembleInboundGateText,
+  assembleProvenanceText,
+  extractForwardHeader,
+  extractRawOriginDisplay,
+  extractRawQuoteText,
+  extractUnboundedRawQuoteText,
+  resolveTelegramCarrier,
+  type ResolvedTelegramCarrier,
+  type TelegramRawRecord,
+} from "./telegram-forward-context.ts";
 import { appendDaily } from "./vault-daily.ts";
 import { buildTelegramReplyContext } from "./telegram-reply-context.ts";
 
 // Структурная проекция входящего сообщения eve: пайплайну хватает этих полей.
 export type TelegramInboundMessage = {
   readonly attachments: readonly unknown[];
-  readonly caption: string;
+  readonly caption?: string;
   readonly chat: {
     readonly id: string;
     readonly title?: string;
@@ -44,7 +62,7 @@ export type TelegramInboundMessage = {
   readonly replyToMessage?: {
     readonly from?: { readonly isBot: boolean };
   };
-  readonly text: string;
+  readonly text?: string;
 };
 
 export type TelegramInboundAuth = {
@@ -136,15 +154,144 @@ function isBotCommand(text: string, bot?: string): boolean {
     : bot !== undefined && target.toLowerCase() === bot.toLowerCase();
 }
 
-function shouldDispatch(msg: TelegramInboundMessage, bot?: string): boolean {
+const EMPTY_CARRIER: ResolvedTelegramCarrier = {
+  source: null,
+  rawVerbatim: "",
+  normalized: "",
+};
+
+function carrierForMessage(
+  message: TelegramInboundMessage,
+): ResolvedTelegramCarrier {
+  const richArchive = extractRichMessageArchivalText(message.raw?.rich_message);
+  const richSafeModel = extractRichMessageSafeModelText(
+    message.raw?.rich_message,
+  );
+  return resolveTelegramCarrier({
+    messageText: message.text,
+    messageCaption: message.caption,
+    raw: message.raw,
+    richMessageArchiveText: richArchive,
+    richMessageSafeModelText: richSafeModel,
+  });
+}
+
+interface InboundMediaDispatchItem {
+  readonly media: TelegramRawMedia;
+  readonly includeCarrierAsCaption: boolean;
+}
+
+function collectInboundMedia(
+  raw: unknown,
+): readonly InboundMediaDispatchItem[] {
+  const items: InboundMediaDispatchItem[] = [];
+  const record = asRecord(raw);
+  if (!record) return items;
+
+  const conventional = mediaFromRaw(record);
+  if (conventional) {
+    items.push({ media: conventional, includeCarrierAsCaption: true });
+  }
+
+  if (record.rich_message) {
+    const richPhotos = extractRichMessagePhotos(record.rich_message);
+    for (const photo of richPhotos) {
+      items.push({ media: photo, includeCarrierAsCaption: false });
+    }
+  }
+
+  return items;
+}
+
+function carrierTextEntries(
+  carrier: ResolvedTelegramCarrier,
+  dailyPath?: string,
+): string[] {
+  if (!carrier.normalized) return [];
+  const sanitized = sanitizeInbound(carrier.normalized);
+  const entries = [sanitized.text];
+  const notice = inboundTruncationNotice(sanitized, dailyPath);
+  if (notice) entries.push(notice);
+  return entries;
+}
+
+type CollectedMediaDispatch =
+  | { readonly kind: "abandoned" }
+  | { readonly kind: "context"; readonly context: string[] };
+
+async function dispatchCollectedMedia(
+  effects: TelegramInboundEffects,
+  raw: TelegramRawMessage,
+  items: readonly InboundMediaDispatchItem[],
+  options: {
+    readonly carrier: ResolvedTelegramCarrier;
+    readonly scan: RichInboundScan;
+    readonly dropSilent: boolean;
+    readonly abandonOnFailure: boolean;
+    readonly extraCarrierText: readonly string[];
+  },
+): Promise<CollectedMediaDispatch> {
+  const prefix = mediaProvenanceEntries(raw, options.scan);
+  const context: string[] = [...prefix];
+  const carrierGoesWithMedia = items.some(
+    (item) => item.includeCarrierAsCaption,
+  );
+  if (!carrierGoesWithMedia && options.extraCarrierText.length > 0) {
+    context.push(...options.extraCarrierText);
+  }
+
+  for (const item of items) {
+    const result = await processMediaPart(effects, raw, item.media, {
+      dropSilent: options.dropSilent && items.length === 1,
+      caption: item.includeCarrierAsCaption ? options.carrier : undefined,
+      includeCarrierAsCaption: item.includeCarrierAsCaption,
+    });
+    const salvageArticle =
+      !item.includeCarrierAsCaption && options.extraCarrierText.length > 0;
+    const salvageInlineProvenance =
+      !item.includeCarrierAsCaption && prefix.length > 0;
+    if (
+      options.abandonOnFailure &&
+      items.length === 1 &&
+      result.kind !== "context" &&
+      !salvageArticle &&
+      !salvageInlineProvenance
+    ) {
+      return { kind: "abandoned" };
+    }
+    context.push(...result.context);
+  }
+  return { kind: "context", context };
+}
+
+function shouldDispatch(
+  msg: TelegramInboundMessage,
+  carrier: ResolvedTelegramCarrier,
+  bot?: string,
+): boolean {
   if (msg.from?.isBot === true || msg.chat.type === "channel") return false;
-  const text: string = msg.text || msg.caption || "";
-  if (!(text.trim().length > 0 || msg.attachments.length > 0)) return false;
+
+  const rawRecord: TelegramRawRecord = msg.raw;
+  const hasCarrier = carrier.normalized.length > 0;
+  const hasQuote = extractRawQuoteText(rawRecord) !== null;
+  const hasForward = extractForwardHeader(rawRecord) !== null;
+  const hasSidecar =
+    msg.attachments.length > 0 ||
+    telegramLocation(msg.raw) !== null ||
+    asRecord(msg.raw.contact) !== null ||
+    asRecord(msg.raw.poll) !== null ||
+    extractRichMessagePhotos(msg.raw.rich_message).length > 0;
+  if (!hasCarrier && !hasQuote && !hasForward && !hasSidecar) {
+    return false;
+  }
+
+  const textForRouting = carrier.normalized;
   return (
     msg.chat.type === "private" ||
     msg.replyToMessage?.from?.isBot === true ||
-    isBotCommand(text, bot) ||
-    (bot !== undefined && text.toLowerCase().includes(`@${bot.toLowerCase()}`))
+    isBotCommand(textForRouting, bot) ||
+    (bot !== undefined &&
+      textForRouting.toLowerCase().includes(`@${bot.toLowerCase()}`))
   );
 }
 
@@ -154,11 +301,12 @@ function shouldDispatch(msg: TelegramInboundMessage, bot?: string): boolean {
 // команда или @упоминание в подписи. Иначе в группе чужой голос ушёл бы в Deepgram.
 function shouldDispatchMedia(
   msg: TelegramInboundMessage,
+  carrier: ResolvedTelegramCarrier,
   bot?: string,
 ): boolean {
   if (msg.from?.isBot === true || msg.chat.type === "channel") return false;
   if (msg.chat.type === "private") return true;
-  const caption: string = msg.caption || "";
+  const caption = carrier.normalized;
   return (
     msg.replyToMessage?.from?.isBot === true ||
     isBotCommand(caption, bot) ||
@@ -175,6 +323,11 @@ function messageViewForRaw(
   const rawFrom = asRecord(raw.from);
   const rawReply = asRecord(raw.reply_to_message);
   const rawReplyFrom = asRecord(rawReply?.from);
+  const replyToMessage = rawReply
+    ? rawReplyFrom
+      ? { from: { isBot: rawReplyFrom.is_bot === true } }
+      : message.replyToMessage
+    : message.replyToMessage;
   return {
     ...message,
     raw,
@@ -196,9 +349,7 @@ function messageViewForRaw(
           isBot: rawFrom.is_bot === true,
         }
       : message.from,
-    replyToMessage: rawReply
-      ? { from: { isBot: rawReplyFrom?.is_bot === true } }
-      : undefined,
+    replyToMessage,
   };
 }
 
@@ -278,17 +429,102 @@ async function noAccessNote(
   }
 }
 
-// Текстовая часть после гейта: помеченный вход едет с предупреждением, усечённый —
-// с пометкой и ссылкой на полную запись в Vault.
-function gatedTextEntries(
-  sanitized: ReturnType<typeof sanitizeInbound>,
+function originQuoteRecord(raw: TelegramRawRecord): TelegramRawRecord {
+  return {
+    forward_origin: raw.forward_origin,
+    quote: raw.quote,
+  };
+}
+
+type RichInboundScan = {
+  readonly gateText: string;
+  readonly sanitized: ReturnType<typeof sanitizeInbound> | null;
+  readonly attack: boolean;
+  readonly flagged: boolean;
+  readonly modelText: string;
+};
+
+function scanRichInbound(
+  raw: TelegramRawRecord,
+  carrier: ResolvedTelegramCarrier,
+): RichInboundScan {
+  const gateText = assembleInboundGateText({
+    rawOriginText: extractRawOriginDisplay(raw) ?? undefined,
+    rawQuoteText: extractUnboundedRawQuoteText(raw) ?? undefined,
+    carrier,
+  });
+  const modelText = assembleFullInboundText(raw, carrier);
+  if (!gateText) {
+    return {
+      gateText: "",
+      sanitized: null,
+      attack: false,
+      flagged: false,
+      modelText,
+    };
+  }
+  const sanitized = sanitizeInbound(gateText);
+  const attack = hasInboundAttackSignal(sanitized);
+  const flagged = sanitized.blocked || sanitized.flags.length > 0 || attack;
+  return { gateText, sanitized, attack, flagged, modelText };
+}
+
+function archiveVerbatimCarrier(
+  carrier: ResolvedTelegramCarrier,
+): string | undefined {
+  return carrier.rawVerbatim.length > 0
+    ? appendDaily("[text]", carrier.rawVerbatim)
+    : undefined;
+}
+
+function richTextContext(
+  scan: RichInboundScan,
   dailyPath?: string,
+  eveCarrier = "",
+): string[] | undefined {
+  if (!scan.gateText || !scan.sanitized) return undefined;
+  if (scan.flagged) {
+    console.error(
+      "[security] inbound flagged:",
+      scan.sanitized.reason,
+      scan.sanitized.flags.join(","),
+    );
+    const entries: string[] = [];
+    if (scan.sanitized.blocked || scan.attack) {
+      entries.push(injectionWarning());
+    }
+    const modelFacing = scan.modelText
+      ? sanitizeInbound(scan.modelText).text
+      : scan.sanitized.text;
+    entries.push(modelFacing);
+    const notice = inboundTruncationNotice(scan.sanitized, dailyPath);
+    if (notice) entries.push(notice);
+    return entries;
+  }
+  if (scan.modelText && scan.modelText !== eveCarrier.trim()) {
+    return [scan.modelText];
+  }
+  return undefined;
+}
+
+function mediaProvenanceEntries(
+  raw: TelegramRawRecord,
+  fullScan: RichInboundScan,
 ): string[] {
   const entries: string[] = [];
-  if (sanitized.blocked) entries.push(injectionWarning());
-  entries.push(sanitized.text);
-  const notice = inboundTruncationNotice(sanitized, dailyPath);
-  if (notice) entries.push(notice);
+  if (fullScan.sanitized && (fullScan.sanitized.blocked || fullScan.attack)) {
+    entries.push(injectionWarning());
+  }
+  const provenance = assembleProvenanceText(raw);
+  if (!provenance) return entries;
+  const provenanceScan = scanRichInbound(originQuoteRecord(raw), EMPTY_CARRIER);
+  if (provenanceScan.flagged && provenanceScan.sanitized) {
+    entries.push(sanitizeInbound(provenance).text);
+    const notice = inboundTruncationNotice(provenanceScan.sanitized);
+    if (notice) entries.push(notice);
+  } else {
+    entries.push(provenance);
+  }
   return entries;
 }
 
@@ -307,32 +543,56 @@ export async function runTelegramInbound(
 
   const raw: TelegramRawMessage = message.raw;
   const partsRaw = messageParts(raw);
-  const media = mediaFromRaw(raw);
+  const inboundMedia = collectInboundMedia(raw);
   const singleLocationContext =
     partsRaw.length === 1 ? telegramLocationContext(raw) : null;
   appendNonFileParts(partsRaw);
 
-  // The allowlist and dispatch decision are complete. Publish the one working
-  // status before reply sanitization, media I/O, security scans or providers.
-  const shouldDispatchAny =
-    partsRaw.length === 1
-      ? media
-        ? shouldDispatchMedia(message, effects.botUsername)
-        : shouldDispatch(
-            singleLocationContext === null
-              ? message
-              : messageViewForRaw(message, raw),
-            effects.botUsername,
-          )
-      : partsRaw.some((partRaw) => {
-          const partMessage = messageViewForRaw(message, partRaw);
-          return mediaFromRaw(partRaw)
-            ? shouldDispatchMedia(partMessage, effects.botUsername)
-            : shouldDispatch(partMessage, effects.botUsername);
-        });
+  const mainCarrier = carrierForMessage(message);
+  const rootMessageView = messageViewForRaw(message, raw);
+  const isSinglePart = partsRaw.length === 1;
+  const acceptedParts = isSinglePart
+    ? []
+    : partsRaw.map((partRaw) => {
+        const partView = messageViewForRaw(message, partRaw);
+        return {
+          raw: partRaw,
+          view: partView,
+          carrier: carrierForMessage(partView),
+          mediaItems: collectInboundMedia(partRaw),
+        };
+      });
+
+  const shouldDispatchAny = isSinglePart
+    ? inboundMedia.length > 0
+      ? shouldDispatchMedia(rootMessageView, mainCarrier, effects.botUsername)
+      : shouldDispatch(rootMessageView, mainCarrier, effects.botUsername)
+    : acceptedParts.some((part) =>
+        part.mediaItems.length > 0
+          ? shouldDispatchMedia(part.view, part.carrier, effects.botUsername)
+          : shouldDispatch(part.view, part.carrier, effects.botUsername),
+      );
   if (!shouldDispatchAny) {
     return null;
   }
+
+  // [ADR-0002] Verbatim [text] write immediately after positive dispatch,
+  // before onAccepted / typing / media. Single-part uses the wrapper carrier
+  // once; multipart archives each part in order and never the wrapper again.
+  const partDailyPaths = new Map<number, string | undefined>();
+  if (isSinglePart) {
+    if (mainCarrier.rawVerbatim.length > 0) {
+      partDailyPaths.set(0, archiveVerbatimCarrier(mainCarrier));
+    }
+  } else {
+    for (const [idx, part] of acceptedParts.entries()) {
+      if (part.carrier.rawVerbatim.length > 0) {
+        partDailyPaths.set(idx, archiveVerbatimCarrier(part.carrier));
+      }
+    }
+  }
+  const carrierDailyPath = partDailyPaths.get(0);
+
   await effects.onAccepted();
 
   // 1a-стоп. Пометка о прерванном ходе + совместимость с апдейтом от старого bridge,
@@ -401,22 +661,24 @@ export async function runTelegramInbound(
   }
 
   // Обёртка диспатчащих return'ов: preContext едет ПЕРЕД остальным контекстом хода.
-  const withPre = (res: TelegramInboundTurn): TelegramInboundTurn =>
-    preContext.length
-      ? { ...res, context: [...preContext, ...(res.context ?? [])] }
-      : res;
+  const withPre = (res: TelegramInboundTurn): TelegramInboundTurn => {
+    if (!preContext.length) return res;
+    return { ...res, context: [...preContext, ...(res.context ?? [])] };
+  };
 
   // 1b. Команды, которые роутятся в модель (/help, /restart, /new — обрабатывает поллер-мост
   //     out-of-band и сюда НЕ доставляет; здесь — только те, что нужны модели).
-  const cmdText = (message.text || "").trim();
-  if (cmdText.startsWith("/")) {
-    const cmd = cmdText.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
-    const rest = cmdText.slice(cmdText.split(/\s+/)[0].length).trim();
+  // Caption / quote / forward MUST NOT become executable command syntax.
+  const rawCommandCarrier =
+    typeof message.text === "string" ? message.text : "";
+  const trimmedCmd = rawCommandCarrier.trim();
+  if (trimmedCmd.startsWith("/")) {
+    const cmd = trimmedCmd.split(/\s+/)[0].replace(/@\w+$/, "").toLowerCase();
+    const rest = trimmedCmd.slice(trimmedCmd.split(/\s+/)[0].length).trim();
     if (cmd === "/task") {
-      appendDaily("[text]", cmdText);
       await effects.startTyping();
       return withPre({
-        auth: buildAuth(message),
+        auth: buildAuth(rootMessageView),
         context: [
           rest
             ? tr(
@@ -428,10 +690,9 @@ export async function runTelegramInbound(
       });
     }
     if (cmd === "/tasks") {
-      appendDaily("[text]", cmdText);
       await effects.startTyping();
       return withPre({
-        auth: buildAuth(message),
+        auth: buildAuth(rootMessageView),
         context: [
           tr(
             "Show my task list (call the tasks tool).",
@@ -441,10 +702,9 @@ export async function runTelegramInbound(
       });
     }
     if (cmd === "/digest") {
-      appendDaily("[text]", cmdText);
       await effects.startTyping();
       return withPre({
-        auth: buildAuth(message),
+        auth: buildAuth(rootMessageView),
         context: [
           tr(
             "Load the morning-digest skill and assemble the morning digest.",
@@ -456,94 +716,113 @@ export async function runTelegramInbound(
     // прочие команды — пусть отвечает модель обычным ходом (fall through)
   }
 
-  // 2. Любой присланный файл (фото/документ/голос/аудио/видео/кружок/анимация/стикер).
-  // uploadPolicy "disabled" → message.attachments пуст; берём ВСЁ из raw сами.
-  if (partsRaw.length === 1 && media) {
+  const fullScan = scanRichInbound(raw, mainCarrier);
+
+  // 2. Любой присланный файл (фото/документ/голос/видео/кружок/анимация/стикер)
+  //    плюс инлайн-фото из rich_message. uploadPolicy "disabled" → attachments
+  //    пуст; берём ВСЁ из raw сами. Инлайн-фото не несут carrier как подпись:
+  //    longread архивируется и контекстуализируется один раз.
+  if (partsRaw.length === 1 && inboundMedia.length > 0) {
     await effects.startTyping();
-    const result = await processMediaPart(effects, raw, media, {
-      dropSilent: !operationalPreContext.length,
-    });
-    if (result.kind !== "context") {
+    const dispatched = await dispatchCollectedMedia(
+      effects,
+      raw,
+      inboundMedia,
+      {
+        carrier: mainCarrier,
+        scan: fullScan,
+        dropSilent: !operationalPreContext.length,
+        abandonOnFailure: true,
+        extraCarrierText: carrierTextEntries(mainCarrier, carrierDailyPath),
+      },
+    );
+    if (dispatched.kind === "abandoned") {
       await effects.onAbandoned();
       return null;
     }
-    return withPre({ auth: buildAuth(message), context: result.context });
+    return withPre({
+      auth: buildAuth(rootMessageView),
+      context: dispatched.context,
+    });
   }
 
   if (singleLocationContext !== null) {
     await effects.startTyping();
     return withPre({
-      auth: buildAuth(message),
-      context: [singleLocationContext],
+      auth: buildAuth(rootMessageView),
+      context: [
+        ...(richTextContext(fullScan, carrierDailyPath, message.text ?? "") ??
+          []),
+        singleLocationContext,
+      ],
     });
   }
 
-  // 3. Текстовая реплика юзера → daily (verbatim) + inbound security-гейт.
+  // 3. Текстовая реплика: Gate сканирует сырую сборку; daily уже записан verbatim.
   if (partsRaw.length === 1) {
-    const userText = (message.text || "").trim();
-    const userDailyPath = userText
-      ? appendDaily("[text]", userText)
-      : undefined;
-
     await effects.startTyping();
-
-    // Санитайз: чистим невидимые/гомоглифы, флагуем инъекции (важно для ПЕРЕСЛАННОГО текста).
-    // Обычный текст без сигналов — оставляем штатный поток нетронутым (context не переопределяем).
-    if (userText) {
-      const s = sanitizeInbound(userText);
-      if (s.blocked || s.flags.length) {
-        console.error(
-          "[security] inbound flagged:",
-          s.reason,
-          s.flags.join(","),
-        );
-        return withPre({
-          auth: buildAuth(message),
-          context: gatedTextEntries(s, userDailyPath),
-        });
-      }
+    const context = richTextContext(
+      fullScan,
+      carrierDailyPath,
+      message.text ?? "",
+    );
+    if (context) {
+      return withPre({
+        auth: buildAuth(rootMessageView),
+        context,
+      });
     }
-    return withPre({ auth: buildAuth(message) });
+    return withPre({ auth: buildAuth(rootMessageView) });
   }
 
   await effects.startTyping();
   const context: string[] = [];
-  for (const [partIndex, partRaw] of partsRaw.entries()) {
-    const partMedia = mediaFromRaw(partRaw);
-    if (partMedia) {
-      const result = await processMediaPart(effects, partRaw, partMedia);
-      context.push(...result.context);
+  for (const [partIndex, part] of acceptedParts.entries()) {
+    const partScan = scanRichInbound(part.raw, part.carrier);
+    if (part.mediaItems.length > 0) {
+      const dispatched = await dispatchCollectedMedia(
+        effects,
+        part.raw,
+        part.mediaItems,
+        {
+          carrier: part.carrier,
+          scan: partScan,
+          dropSilent: false,
+          abandonOnFailure: false,
+          extraCarrierText: carrierTextEntries(
+            part.carrier,
+            partDailyPaths.get(partIndex),
+          ),
+        },
+      );
+      if (dispatched.kind === "context") {
+        context.push(...dispatched.context);
+      }
       continue;
     }
 
-    const locationContext = telegramLocationContext(partRaw);
+    const locationContext = telegramLocationContext(part.raw);
     if (locationContext !== null) {
+      const gated = richTextContext(
+        partScan,
+        partDailyPaths.get(partIndex),
+        partIndex === 0 ? (message.text ?? "") : "",
+      );
+      if (gated) context.push(...gated);
       context.push(locationContext);
       continue;
     }
 
-    const userText = (asText(partRaw.text) || asText(partRaw.caption)).trim();
-    if (!userText) continue;
-    const userDailyPath = appendDaily("[text]", userText);
-    const sanitized = sanitizeInbound(userText);
-    if (sanitized.blocked || sanitized.flags.length) {
-      console.error(
-        "[security] inbound flagged:",
-        sanitized.reason,
-        sanitized.flags.join(","),
-      );
-    }
-    const carrierText = (message.text || message.caption || "").trim();
-    const isCleanCarrierText =
-      partIndex === 0 &&
-      userText === carrierText &&
-      !sanitized.blocked &&
-      !sanitized.flags.length;
-    if (!isCleanCarrierText)
-      context.push(...gatedTextEntries(sanitized, userDailyPath));
+    if (!partScan.gateText) continue;
+    const gated = richTextContext(
+      partScan,
+      partDailyPaths.get(partIndex),
+      partIndex === 0 ? (message.text ?? "") : "",
+    );
+    if (gated) context.push(...gated);
   }
   return withPre({
-    auth: buildAuth(message),
+    auth: buildAuth(rootMessageView),
     ...(context.length ? { context } : {}),
   });
 }

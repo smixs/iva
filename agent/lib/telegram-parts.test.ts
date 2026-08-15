@@ -70,3 +70,23 @@ test("messageParts drops malformed synthetic collector entries", () => {
     [valid],
   );
 });
+
+test("messageParts falls back to the outer raw when iva_parts is empty", () => {
+  const raw = { message_id: 1, text: "outer", iva_parts: [] };
+  const parts = messageParts(raw);
+
+  assert.deepEqual(parts, [raw]);
+  assert.equal(parts[0], raw);
+});
+
+test("messageParts falls back to the outer raw when iva_parts is junk-only", () => {
+  const raw = {
+    message_id: 1,
+    text: "outer kept",
+    iva_parts: [null, "text", 42, []],
+  };
+  const parts = messageParts(raw);
+
+  assert.deepEqual(parts, [raw]);
+  assert.equal(parts[0], raw);
+});

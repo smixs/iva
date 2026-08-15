@@ -74,7 +74,8 @@ export function mediaFromRaw(raw: TelegramRawMessage): TelegramRawMedia | null {
 }
 
 export function messageParts(raw: TelegramRawMessage): TelegramRawMessage[] {
-  return Array.isArray(raw.iva_parts)
-    ? raw.iva_parts.filter(isTelegramRawMessage)
-    : [raw];
+  if (!Array.isArray(raw.iva_parts)) return [raw];
+
+  const valid = raw.iva_parts.filter(isTelegramRawMessage);
+  return valid.length > 0 ? valid : [raw];
 }

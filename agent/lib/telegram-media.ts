@@ -22,6 +22,7 @@ import {
   injectionWarning,
 } from "./telegram-gate-notice.ts";
 import { appendDaily, localStamp, saveBlob } from "./vault-daily.ts";
+import type { ResolvedTelegramCarrier } from "./telegram-forward-context.ts";
 import type { TelegramRawMedia, TelegramRawMessage } from "./telegram-parts.ts";
 
 export type TelegramMediaEffects = {
@@ -76,10 +77,23 @@ export async function processMediaPart(
   effects: TelegramMediaEffects,
   raw: TelegramRawMessage,
   media: TelegramRawMedia,
-  { dropSilent = false } = {},
+  options: {
+    readonly dropSilent?: boolean;
+    readonly caption?: ResolvedTelegramCarrier;
+    readonly includeCarrierAsCaption?: boolean;
+  } = {},
 ): Promise<TelegramMediaPart> {
+  const {
+    dropSilent = false,
+    caption: captionCarrier,
+    includeCarrierAsCaption = true,
+  } = options;
   const tag = `[${media.tag}]`;
-  const caption = asText(raw.caption).trim();
+  const caption = !includeCarrierAsCaption
+    ? ""
+    : captionCarrier
+      ? captionCarrier.normalized
+      : asText(raw.caption).trim();
   const capSuffix = caption ? `\n\n${caption}` : "";
   try {
     let cached = null;
@@ -128,13 +142,20 @@ export async function processMediaPart(
             `${tr("(file >20MB — Telegram won't hand it to bots)", "(файл >20MB — Telegram не отдаёт его ботам)")}${capSuffix}`,
           );
           try {
+            const captionWasRetained = caption.length > 0;
+            const sizeClause = tr(
+              "The file is over 20 MB — Telegram won't hand such files to bots.",
+              "Файл больше 20 МБ — Telegram не отдаёт такие ботам.",
+            );
+            const captionClause = captionWasRetained
+              ? tr(" I saved the caption.", " Подпись сохранил.")
+              : "";
+            const retryClause = tr(
+              " Send the file another way (a link or in parts).",
+              " Перешли файл иначе (ссылкой/частями).",
+            );
             await effects.sendMessage(
-              tr(
-                "The file is over 20 MB — Telegram won't hand such files to bots. " +
-                  "I saved the caption; send the file another way (a link or in parts).",
-                "Файл больше 20 МБ — Telegram не отдаёт такие ботам. " +
-                  "Подпись сохранил; перешли файл иначе (ссылкой/частями).",
-              ),
+              `${sizeClause}${captionClause}${retryClause}`,
             );
           } catch {
             /* молча игнорируем сбой ответа */
