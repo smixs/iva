@@ -579,6 +579,15 @@ export function materializeCustomLayer({
           recursive: true,
           preserveTimestamps: true,
         });
+      // Since 0.3.24 agent/lib/data-dir.ts reaches one level further out:
+      // `../../packages/data-dir/index.ts`. Without packages/ in the snapshot
+      // Eve cannot bundle the promoted agent and the service crash-loops.
+      const rootPackages = join(root, "packages");
+      if (existsSync(rootPackages))
+        cpSync(rootPackages, join(stagedRuntime, "packages"), {
+          recursive: true,
+          preserveTimestamps: true,
+        });
       renameSync(stagedRuntime, runtimeRoot);
     } catch (error) {
       rmSync(stagedRuntime, { recursive: true, force: true });
