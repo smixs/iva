@@ -48,8 +48,19 @@ export function recoveryFixture(): RecoveryFixture {
   git(temp, "clone", "--branch", "main", remote, local);
   git(local, "config", "user.email", "test@example.com");
   git(local, "config", "user.name", "Iva Test");
+  normalizePermissions(local);
   mkdirSync(data, { recursive: true });
   return { temp, remote, seed, local, data };
+}
+
+/**
+ * Git checks a clone out through the runner's umask, so a group-writable umask hands every
+ * test a tree the snapshot already calls dirty on permissions alone. Pin the checkout to
+ * 644 so each test decides for itself what is dirty about its tree.
+ */
+export function normalizePermissions(root: string): void {
+  for (const path of git(root, "ls-files").split("\n").filter(Boolean))
+    chmodSync(join(root, path), 0o644);
 }
 
 export function recoveryTransaction(fx: RecoveryFixture) {
@@ -69,6 +80,7 @@ export function addIgnoreRule(fx: RecoveryFixture, pattern: string): void {
   git(fx.seed, "commit", "-m", `ignore ${pattern}`);
   git(fx.seed, "push", "origin", "main");
   git(fx.local, "pull", "--ff-only");
+  normalizePermissions(fx.local);
 }
 
 export function wrappedRecoveryTransaction(fx: RecoveryFixture, body: string) {

@@ -871,3 +871,44 @@ test("one recovery cleanup failure cannot skip env, output or node_modules rollb
   );
   await tx.teardownCandidate();
 });
+
+test("protect and rollback keep a group-writable tracked file at its own permissions", async (t) => {
+  const fx = fixture();
+  t.after(() => rmSync(fx.temp, { recursive: true, force: true }));
+  // Only the permission differs from HEAD — the bytes and the index are untouched — so
+  // this is the whole reason the snapshot is taken, and the restore must not flatten it.
+  chmodSync(join(fx.local, "tracked.txt"), 0o664);
+  const mode = () => statSync(join(fx.local, "tracked.txt")).mode & 0o777;
+  const tx = transaction(fx);
+
+  await tx.protect();
+
+  assert.equal(mode(), 0o664);
+  assert.equal(readFileSync(join(fx.local, "tracked.txt"), "utf8"), "base\n");
+
+  await tx.rollback();
+
+  assert.equal(mode(), 0o664);
+  assert.equal(readFileSync(join(fx.local, "tracked.txt"), "utf8"), "base\n");
+});
+
+test("a clean rollback puts back the permissions git reset wrote through the umask", async (t) => {
+  const fx = fixture();
+  t.after(() => rmSync(fx.temp, { recursive: true, force: true }));
+  const tracked = join(fx.local, "tracked.txt");
+  const tx = transaction(fx);
+
+  await tx.protect();
+  writeFileSync(tracked, "new commit\n");
+  git(fx.local, "add", "tracked.txt");
+  git(fx.local, "commit", "-m", "simulate integrated update");
+  // The reset inside the rollback rewrites the file as a child of this process, so a
+  // group-writable umask here is exactly the installation the updater kept failing on.
+  const previous = process.umask(0o002);
+  t.after(() => process.umask(previous));
+
+  await tx.rollback();
+
+  assert.equal(statSync(tracked).mode & 0o777, 0o644);
+  assert.equal(readFileSync(tracked, "utf8"), "base\n");
+});

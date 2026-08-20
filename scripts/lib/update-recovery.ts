@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, readFileSync, readlinkSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+} from "node:fs";
 import { resolve, sep } from "node:path";
 import {
   planIgnoredCollisions,
@@ -443,6 +449,7 @@ export class UpdateRecoveryOwner {
     if (this.#state.phase === "clean") {
       await this.#clearIndexFlags(this.#state.indexFlags);
       await this.#mustGit(["reset", "--hard", this.#headOid]);
+      this.#restorePermissions(this.#state.worktreeEntries);
       await this.#restoreIndexFlags(this.#state.indexFlags);
       await this.#snapshotVerifier.verifyClean(this.#state);
       return;
@@ -586,6 +593,7 @@ export class UpdateRecoveryOwner {
     await this.#materializeTree(
       snapshot.worktreeTree,
       snapshot.indexEntries.map(({ path }) => path),
+      snapshot.worktreeEntries,
     );
     if (!preserveCollisionOwnership && snapshot.untrackedTree) {
       await this.#untracked.restore(
@@ -616,13 +624,23 @@ export class UpdateRecoveryOwner {
     }
   }
 
+  // A Git tree only records the executable bit, so the live permissions the snapshot
+  // captured (664 under a group-writable umask, say) have to be carried in separately —
+  // otherwise the restore republishes every file at 644/755 and the verifier that runs
+  // right after rejects the tree it just wrote.
   async #materializeTree(
     tree: string,
     removePaths: readonly string[],
+    liveEntries: readonly SnapshotTreeEntry[] = [],
     preserveCollisionOwnership = false,
   ) {
     const entries = this.#objects.parseTreeEntries(
       await this.#mustGit(["ls-tree", "-r", "-z", tree]),
+    );
+    const livePermissions = new Map(
+      liveEntries.flatMap(({ path, permissions }) =>
+        permissions === undefined ? [] : [[path, permissions] as const],
+      ),
     );
     const contents: RecoveryContentEntry[] = [];
     for (const entry of entries) {
@@ -633,7 +651,12 @@ export class UpdateRecoveryOwner {
         throw new Error(
           blob.stderr || `couldn't read recovery blob: ${entry.path}`,
         );
-      contents.push({ ...entry, bytes: blob.stdout });
+      const permissions = livePermissions.get(entry.path);
+      contents.push({
+        ...entry,
+        bytes: blob.stdout,
+        ...(permissions === undefined ? {} : { permissions }),
+      });
     }
     const owner = new RawTrackedOwner({
       root: this.#root,
@@ -742,6 +765,20 @@ export class UpdateRecoveryOwner {
     if (stat.isDirectory() && indexMode === "160000")
       throw new Error(`unsupported working-tree entry: ${path} (gitlink)`);
     throw new Error(`unsupported working-tree entry: ${path}`);
+  }
+
+  // `git reset --hard` rewrites every changed file through the process umask, so a tree
+  // that was 664 comes back 644 under a stricter one. The captured modes are part of what
+  // recovery promises to restore, and the verifier right after this compares them.
+  #restorePermissions(entries: readonly SnapshotTreeEntry[]): void {
+    for (const { path, permissions } of entries) {
+      if (permissions === undefined) continue;
+      const target = this.#safeChild(this.#root, path);
+      const stat = lstatSync(target, { throwIfNoEntry: false });
+      if (!stat || stat.isSymbolicLink() || (stat.mode & 0o777) === permissions)
+        continue;
+      chmodSync(target, permissions);
+    }
   }
 
   #liveBytes(entry: SnapshotTreeEntry): Buffer {
