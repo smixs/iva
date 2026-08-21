@@ -111,13 +111,39 @@ function restoreOutput(backup: string | null): void {
   if (backup && existsSync(backup)) renameSync(backup, join(ROOT, ".output"));
 }
 
+function promoteAgentSummary(staging: string): string | null {
+  const built = join(staging, ".eve/agent-summary.json");
+  const liveDir = join(ROOT, ".eve");
+  const live = join(liveDir, "agent-summary.json");
+  mkdirSync(liveDir, { recursive: true });
+  const backup = existsSync(live)
+    ? join(liveDir, `agent-summary.iva-build-backup-${Date.now()}.json`)
+    : null;
+  if (backup) renameSync(live, backup);
+  try {
+    renameSync(built, live);
+  } catch (error) {
+    if (backup && existsSync(backup)) renameSync(backup, live);
+    throw error;
+  }
+  return backup;
+}
+
+function restoreAgentSummary(backup: string | null): void {
+  rmSync(join(ROOT, ".eve/agent-summary.json"), { force: true });
+  if (backup && existsSync(backup))
+    renameSync(backup, join(ROOT, ".eve/agent-summary.json"));
+}
+
 export function buildWithCustomLayer(): void {
   mkdirSync(BUILD_ROOT, { recursive: true });
   const staging = mkdtempSync(join(BUILD_ROOT, "staging-"));
   let materialized: MaterializedCustomLayer | null = null;
   let invalidRecoveryDir: string | null = null;
   let outputBackup: string | null = null;
-  let promoted = false;
+  let summaryBackup: string | null = null;
+  let outputPromoted = false;
+  let summaryPromoted = false;
   try {
     copySourceTree(staging);
     if (existsSync(join(ROOT, "node_modules")))
@@ -189,7 +215,11 @@ export function buildWithCustomLayer(): void {
       agentRoot: materialized?.runtimeRoot,
     });
     outputBackup = promoteOutput(staging);
-    promoted = true;
+    outputPromoted = true;
+    if (existsSync(join(staging, ".eve/agent-summary.json"))) {
+      summaryBackup = promoteAgentSummary(staging);
+      summaryPromoted = true;
+    }
     if (materialized) {
       commitCustomLayer(materialized);
       materialized = null;
@@ -198,9 +228,16 @@ export function buildWithCustomLayer(): void {
       process.stderr.write(
         `custom layer is invalid; built core only; recovery: ${invalidRecoveryDir}\n`,
       );
-    if (outputBackup) rmSync(outputBackup, { recursive: true, force: true });
+    try {
+      if (summaryBackup) rmSync(summaryBackup, { force: true });
+      if (outputBackup) rmSync(outputBackup, { recursive: true, force: true });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`build artifact cleanup deferred: ${detail}\n`);
+    }
   } catch (error) {
-    if (promoted) restoreOutput(outputBackup);
+    if (summaryPromoted) restoreAgentSummary(summaryBackup);
+    if (outputPromoted) restoreOutput(outputBackup);
     if (materialized) discardCustomLayer(materialized);
     throw error;
   } finally {
