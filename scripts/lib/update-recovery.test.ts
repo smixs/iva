@@ -141,6 +141,26 @@ test("rollback restores raw bytes without clean, smudge or eol filters", async (
   assert.deepEqual(state(), before);
 });
 
+test("a clean rollback drops the recovery stash, matching commit's cleanup", async (t) => {
+  const fx = fixture();
+  t.after(() => rmSync(fx.temp, { recursive: true, force: true }));
+  const trackedPath = join(fx.local, "tracked.txt");
+  const dirtyContent = "dirty modification\n";
+  writeFileSync(trackedPath, dirtyContent);
+  const tx = transaction(fx);
+
+  await tx.protect();
+
+  const stashBefore = git(fx.local, "stash", "list", "--format=%H");
+  assert.notEqual(stashBefore, "");
+
+  await tx.rollback();
+
+  const stashAfter = git(fx.local, "stash", "list", "--format=%H");
+  assert.equal(stashAfter, "");
+  assert.equal(readFileSync(trackedPath, "utf8"), dirtyContent);
+});
+
 test("rollback restores assume-unchanged and skip-worktree flags with hidden bytes", async (t) => {
   const fx = fixture();
   t.after(() => rmSync(fx.temp, { recursive: true, force: true }));

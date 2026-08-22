@@ -775,6 +775,14 @@ export function createUpdateTransaction({
         }
         await recoveryOwner.rollback();
         stashApplied = hadLocalChanges;
+        // Without this the recovery stash from protect() survives a failed
+        // /update and accumulates in `git stash list`. commit() (the success
+        // path) already drops it through the same dropExactStash — rollback()
+        // did not keep that symmetry.
+        await recoveryOwner.cleanup(
+          dropExactStash,
+          resources.recoveryExcludedPaths,
+        );
       }
     } catch (error) {
       capture(error);
